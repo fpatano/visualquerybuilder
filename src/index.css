@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-databricks-medium-gray;
+  }
+  body {
+    @apply bg-databricks-light-gray text-databricks-dark-gray;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  .databricks-card {
+    @apply bg-white border border-databricks-medium-gray rounded-lg shadow-sm;
+  }
+  
+  .databricks-button {
+    @apply bg-databricks-orange hover:bg-databricks-orange/90 text-white font-medium px-4 py-2 rounded-md transition-colors;
+  }
+  
+  .databricks-input {
+    @apply border border-databricks-medium-gray rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-databricks-blue focus:border-transparent;
+  }
+  
+  .sidebar-panel {
+    @apply bg-white border-r border-databricks-medium-gray h-full overflow-hidden flex flex-col;
+  }
+  
+  .canvas-area {
+    @apply bg-databricks-light-gray flex-1 overflow-hidden relative;
+  }
+  
+  .sql-editor {
+    @apply bg-white border-t border-databricks-medium-gray;
+  }
+  
+  .preview-pane {
+    @apply bg-white border-l border-databricks-medium-gray overflow-hidden flex flex-col;
+  }
+}
+
+/* React Flow custom styles */
+.react-flow__node-custom {
+  @apply bg-white border-2 border-databricks-blue rounded-lg shadow-md;
+}
+
+.react-flow__node-custom.selected {
+  @apply border-databricks-orange;
+}
+
+.react-flow__edge-custom {
+  stroke: #00A1C9;
+  stroke-width: 2;
+}
+
+/* Monaco Editor custom styles */
+.monaco-editor {
+  @apply rounded-md;
+}

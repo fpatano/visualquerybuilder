@@ -1,0 +1,22 @@
+name: visual-sql-query-builder
+display_name: Visual SQL Query Builder
+description: A modern visual interface for building SQL queries with Unity Catalog integration
+
+resources:
+  - name: visual-sql-query-builder
+    description: Main application server
+    file_path: ./server.js
+    port: "{{DATABRICKS_APP_PORT}}"
+
+environments:
+  - name: development
+    display_name: Development
+  - name: production  
+    display_name: Production
+
+permissions:
+  - permission: CAN_MANAGE_CATALOG
+  - permission: CAN_USE_CATALOG
+  - permission: CAN_USE_SCHEMA
+  - permission: CAN_SELECT
+  - permission: CAN_USE_WAREHOUSE
