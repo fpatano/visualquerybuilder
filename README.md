@@ -2,7 +2,7 @@
 
 A modern, intuitive visual interface for building SQL queries with Unity Catalog integration, designed specifically for Databricks environments.
 
-![Visual SQL Query Builder](./assets/visual-query-builder.png)
+![Visual SQL Query Builder](./assets/visual_query_builder.png)
 
 ## Features
 
