@@ -1,13 +1,13 @@
 import React, { useState, useCallback, useRef } from 'react';
 import Editor from '@monaco-editor/react';
-import { Play, Copy, Download, Upload, Maximize2, Minimize2 } from 'lucide-react';
+import { Play, Copy, Download, Upload, Maximize2, Minimize2, RefreshCw } from 'lucide-react';
 import { useQueryBuilder } from '../../contexts/QueryBuilderContext';
-import { parseSQL } from '../../utils/sqlGenerator';
 
 const SQLEditor: React.FC = () => {
-  const { state, dispatch, executeQuery, cancelQuery } = useQueryBuilder();
+  const { state, dispatch, executeQuery, cancelQuery, applySqlToCanvas } = useQueryBuilder();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const editorRef = useRef<any>(null);
 
   const handleEditorDidMount = (editor: any) => {
@@ -34,13 +34,13 @@ const SQLEditor: React.FC = () => {
         dispatch({ type: 'UPDATE_SQL', payload: value });
         
         // Parse SQL and update canvas (simplified implementation)
-        try {
-          const parsedQuery = parseSQL(value);
-          // Update query state based on parsed SQL
-          // This is a placeholder - implement proper SQL parsing
-        } catch (error) {
-          console.warn('SQL parsing failed:', error);
-        }
+        // Disabled for now to avoid blocking UI - this should happen in applySqlToCanvas
+        // try {
+        //   const parsedQuery = await parseSQL(value);
+        //   // Update query state based on parsed SQL
+        // } catch (error) {
+        //   console.warn('SQL parsing failed:', error);
+        // }
       }
     },
     [state.sqlQuery, dispatch]
@@ -49,8 +49,8 @@ const SQLEditor: React.FC = () => {
   const handleExecute = async () => {
     setIsExecuting(true);
     try {
-      // Allow full query execution when manually triggered from SQL Editor
-      await executeQuery(false); // false = not preview mode = no auto LIMIT
+      // Manual run from editor: use preview unless the user confirms full
+      await executeQuery(true);
     } finally {
       setIsExecuting(false);
     }
@@ -97,6 +97,39 @@ const SQLEditor: React.FC = () => {
     }
   };
 
+  const handleSyncToCanvas = async () => {
+    if (!state.sqlQuery.trim()) {
+      alert('Please enter a SQL query before syncing to canvas.');
+      return;
+    }
+    
+    setIsSyncing(true);
+    try {
+      console.log('🔄 Initiating manual sync to canvas from SQL Editor');
+      await applySqlToCanvas(state.sqlQuery);
+      console.log('✅ Manual sync to canvas completed');
+    } catch (error) {
+      console.error('❌ Manual sync to canvas failed:', error);
+      // The applySqlToCanvas function will handle showing the user error message
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleEditorBlur = useCallback(async () => {
+    // Auto-sync when user clicks away from editor (if there's SQL content)
+    if (state.sqlQuery.trim() && !isSyncing) {
+      setIsSyncing(true);
+      try {
+        await applySqlToCanvas(state.sqlQuery);
+      } catch (error) {
+        console.error('Failed to auto-sync SQL to canvas:', error);
+      } finally {
+        setIsSyncing(false);
+      }
+    }
+  }, [state.sqlQuery, isSyncing, applySqlToCanvas]);
+
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
   };
@@ -118,53 +151,15 @@ const SQLEditor: React.FC = () => {
         </div>
         
         <div className="flex items-center space-x-2">
+          {/* Sync to Canvas Button */}
           <button
-            onClick={handleImport}
-            className="flex items-center space-x-1 px-3 py-1.5 text-sm text-databricks-dark-gray hover:text-databricks-blue transition-colors"
-            title="Import SQL file"
+            onClick={handleSyncToCanvas}
+            disabled={!state.sqlQuery.trim() || isSyncing}
+            className="flex items-center space-x-1 px-2 py-1 text-xs bg-databricks-blue text-white rounded hover:bg-databricks-dark-blue disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title="Sync SQL to visual canvas"
           >
-            <Upload className="w-4 h-4" />
-            <span>Import</span>
-          </button>
-          
-          <button
-            onClick={handleExport}
-            className="flex items-center space-x-1 px-3 py-1.5 text-sm text-databricks-dark-gray hover:text-databricks-blue transition-colors"
-            title="Export SQL file"
-            disabled={!state.sqlQuery.trim()}
-          >
-            <Download className="w-4 h-4" />
-            <span>Export</span>
-          </button>
-          
-          <button
-            onClick={handleCopy}
-            className="flex items-center space-x-1 px-3 py-1.5 text-sm text-databricks-dark-gray hover:text-databricks-blue transition-colors"
-            title="Copy SQL to clipboard"
-            disabled={!state.sqlQuery.trim()}
-          >
-            <Copy className="w-4 h-4" />
-            <span>Copy</span>
-          </button>
-          
-          <div className="w-px h-6 bg-databricks-medium-gray" />
-          
-          <button
-            onClick={handleExecute}
-            disabled={!state.sqlQuery.trim() || isExecuting}
-            className="flex items-center space-x-2 databricks-button disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Play className="w-4 h-4" />
-            <span>{isExecuting ? 'Running...' : 'Run'}</span>
-          </button>
-
-          <button
-            onClick={handleCancel}
-            disabled={!isExecuting}
-            className="flex items-center space-x-2 databricks-button disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Cancel running query"
-          >
-            <span>Cancel</span>
+            <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>{isSyncing ? 'Syncing...' : 'Sync to Canvas'}</span>
           </button>
           
           <button
@@ -184,7 +179,11 @@ const SQLEditor: React.FC = () => {
           defaultLanguage="sql"
           value={state.sqlQuery}
           onChange={handleSQLChange}
-          onMount={handleEditorDidMount}
+          onMount={(editor) => {
+            handleEditorDidMount(editor);
+            // Add blur handler for auto-sync
+            editor.onDidBlurEditorText(handleEditorBlur);
+          }}
           options={{
             fontSize: 14,
             lineNumbers: 'on',

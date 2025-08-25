@@ -311,8 +311,77 @@ router.post('/api/databricks/2.0/sql/statements', async (req, res) => {
     const elapsedMs = Date.now() - startTime;
     const dbReqId = response?.headers?.['x-request-id'] || response?.data?.status?.request_id;
     console.log('[DIRECT] SQL response status:', response.status, 'elapsedMs:', elapsedMs, 'requestId:', dbReqId || 'n/a');
-    // Pass-through Databricks response for compatibility
-    res.json(response.data);
+    // If result is not immediately available, poll the statement endpoint until ready
+    let data = response.data || {};
+    const statementId = data?.statement_id || data?.status?.statement_id || data?.statement?.statement_id;
+    const fetchStatement = async (id) => {
+      const pollRes = await axios.get(
+        `${process.env.DATABRICKS_HOST}/api/2.0/sql/statements/${id}`,
+        {
+          headers: { 'Authorization': `Bearer ${process.env.DATABRICKS_TOKEN}` },
+          params: { wait_timeout: '30s' },
+          timeout: 120000
+        }
+      );
+      return pollRes.data;
+    };
+
+    if (!data.result && statementId) {
+      console.log('[DIRECT] Polling for statement result:', statementId);
+      const maxAttempts = 4; // up to ~2 minutes combined with server timeouts
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const polled = await fetchStatement(statementId);
+        if (polled?.result) { data = polled; break; }
+        const stateVal = polled?.status?.state;
+        if (stateVal === 'FAILED' || stateVal === 'CANCELED') {
+          data = polled; break;
+        }
+      }
+    }
+
+    // If result uses EXTERNAL_LINKS, fetch chunks server-side and attach data_array
+    const result = data.result || {};
+    if (!result.data_array && result.external_links) {
+      try {
+        // Recursively collect any http(s) URLs from the external_links object
+        const collectUrls = (node) => {
+          const urls = [];
+          const visit = (v) => {
+            if (!v) return;
+            if (typeof v === 'string') {
+              if (/^https?:\/\//.test(v)) urls.push(v);
+            } else if (Array.isArray(v)) {
+              v.forEach(visit);
+            } else if (typeof v === 'object') {
+              Object.values(v).forEach(visit);
+            }
+          };
+        visit(node);
+          return urls;
+        };
+
+        const chunkUrls = collectUrls(result.external_links);
+        const chunkResponses = await Promise.all(
+          chunkUrls.map((url) => axios.get(url, { timeout: 120000 }))
+        );
+        const combinedRows = [];
+        for (const resp of chunkResponses) {
+          // Normalize rows regardless of format
+          let arr = resp.data?.data_array || resp.data?.data || [];
+          if (Array.isArray(resp.data?.chunks)) {
+            for (const ch of resp.data.chunks) {
+              if (Array.isArray(ch?.data_array)) combinedRows.push(...ch.data_array);
+            }
+          }
+          if (Array.isArray(arr)) combinedRows.push(...arr);
+        }
+        data.result = { ...result, data_array: combinedRows };
+      } catch (e) {
+        console.warn('[DIRECT] Failed to fetch external chunks:', e.message);
+      }
+    }
+    // Return possibly-enriched response
+    res.json(data);
   } catch (error) {
     const elapsedMs = Date.now() - startTime;
     const status = error.response?.status || 500;
@@ -334,7 +403,7 @@ router.post('/api/databricks/2.0/sql/statements', async (req, res) => {
 
 // API proxy for other Databricks calls (Unity Catalog, etc.)
 router.use('/api/databricks', createProxyMiddleware({
-  target: process.env.DATABRICKS_HOST || 'https://dbc-12345678-1234.cloud.databricks.com',
+  target: process.env.DATABRICKS_HOST || 'https://dbc-00000000-0000.cloud.databricks.com',
   changeOrigin: true,
   timeout: 120000, // 2 minutes for SQL queries
   proxyTimeout: 120000, // 2 minutes for proxy itself

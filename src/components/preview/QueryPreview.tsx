@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { Play, Table, BarChart3, Download, Maximize2, AlertCircle, CheckCircle, Clock, Loader2 } from 'lucide-react';
+import { Play, Table, Download, Maximize2, AlertCircle, CheckCircle, Clock, Loader2 } from 'lucide-react';
 import { useQueryBuilder } from '../../contexts/QueryBuilderContext';
 import ResultsTable from './ResultsTable';
 import ResultsChart from './ResultsChart';
 
-type ViewMode = 'table' | 'chart';
+type ViewMode = 'table';
 
 const QueryPreview: React.FC = () => {
   const { state, executeQuery } = useQueryBuilder();
@@ -13,8 +13,8 @@ const QueryPreview: React.FC = () => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   const handleExecute = async () => {
-    // Use preview mode for QueryPreview to prevent timeouts
-    await executeQuery(true); // true = preview mode = auto LIMIT applied
+    // Use preview mode for QueryPreview by default; shift-click runs full
+    await executeQuery(true);
   };
 
   const handleExport = () => {
@@ -142,11 +142,7 @@ const QueryPreview: React.FC = () => {
       );
     }
 
-    if (viewMode === 'table') {
-      return <ResultsTable queryResult={queryResult} />;
-    } else {
-      return <ResultsChart queryResult={queryResult} />;
-    }
+    return <ResultsTable queryResult={queryResult} />;
   };
 
   return (
@@ -164,36 +160,11 @@ const QueryPreview: React.FC = () => {
                 <button
                   onClick={handleExport}
                   className="flex items-center space-x-1 px-3 py-1.5 text-sm text-databricks-dark-gray hover:text-databricks-blue transition-colors"
-                  title="Export results as CSV"
+                  title="Export results as CSV (.csv)"
                 >
                   <Download className="w-4 h-4" />
                   <span>Export</span>
                 </button>
-                
-                <div className="flex bg-databricks-light-gray rounded-lg p-1">
-                  <button
-                    onClick={() => setViewMode('table')}
-                    className={`flex items-center space-x-1 px-2 py-1 text-xs rounded transition-colors ${
-                      viewMode === 'table' 
-                        ? 'bg-white text-databricks-blue shadow-sm' 
-                        : 'text-databricks-dark-gray hover:text-databricks-blue'
-                    }`}
-                  >
-                    <Table className="w-3 h-3" />
-                    <span>Table</span>
-                  </button>
-                  <button
-                    onClick={() => setViewMode('chart')}
-                    className={`flex items-center space-x-1 px-2 py-1 text-xs rounded transition-colors ${
-                      viewMode === 'chart' 
-                        ? 'bg-white text-databricks-blue shadow-sm' 
-                        : 'text-databricks-dark-gray hover:text-databricks-blue'
-                    }`}
-                  >
-                    <BarChart3 className="w-3 h-3" />
-                    <span>Chart</span>
-                  </button>
-                </div>
               </>
             )}
             

@@ -82,6 +82,14 @@ export interface DataProfile {
   max?: any;
   mean?: number;
   median?: number;
+  stddev?: number;
+  percentiles?: {
+    p25?: number;
+    p50?: number;
+    p75?: number;
+    p90?: number;
+    p99?: number;
+  };
   metadata?: {
     columnCount?: number;
     nullableColumns?: number;
@@ -91,6 +99,8 @@ export interface DataProfile {
     isApproximate?: boolean;
     performanceNote?: string;
     nullPercentage?: number;
+    mode?: ProfileMode;
+    updatedAt?: string;
   };
 }
 
@@ -106,4 +116,44 @@ export interface QueryResult {
     note?: string;
     [key: string]: any;
   };
+}
+
+export type ProfileMode = 'fast' | 'standard' | 'deep';
+
+export interface ProfileCacheEntry {
+  key: string;
+  mode: ProfileMode;
+  data?: DataProfile;
+  status: 'fresh' | 'stale' | 'loading' | 'error';
+  error?: string;
+  updatedAt?: number; // epoch ms
+  ttlMs: number;
+}
+
+// Parsed SQL structures for syncing editor -> canvas
+export interface ParsedTableRef {
+  catalog: string;
+  schema: string;
+  name: string;
+  alias?: string;
+}
+
+export interface ParsedJoinRef {
+  joinType: 'INNER' | 'LEFT' | 'RIGHT' | 'FULL';
+  leftAlias: string;
+  leftColumn: string;
+  rightAlias: string;
+  rightColumn: string;
+}
+
+export interface ParsedSelectRef {
+  alias: string;
+  column: string;
+  as?: string;
+}
+
+export interface ParsedSQL {
+  tables: ParsedTableRef[];
+  joins: ParsedJoinRef[];
+  selects: ParsedSelectRef[];
 }

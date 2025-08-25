@@ -62,7 +62,10 @@ const CatalogExplorer: React.FC = () => {
         children = await fetchSchemas(item.name);
       } else if (item.type === 'schema') {
         const parts = item.id.split('.');
-        children = await fetchTables(parts[0], parts[1]);
+        const catalogName = parts[0];
+        const schemaName = parts[1];
+        // Load only table list; columns will be fetched on demand (expand or drag)
+        children = await fetchTables(catalogName, schemaName);
       } else if (item.type === 'table') {
         const parts = item.id.split('.');
         children = await fetchColumns(parts[0], parts[1], parts[2]);

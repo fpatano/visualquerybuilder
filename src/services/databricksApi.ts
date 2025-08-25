@@ -1,23 +1,21 @@
 import axios from 'axios';
-import { CatalogItem, QueryResult, DataProfile } from '../types';
+import { CatalogItem, QueryResult, DataProfile, ProfileMode } from '../types';
 
 const API_BASE = '/api/databricks';
 
 // Configure axios defaults - increased for large query processing
 axios.defaults.timeout = 120000; // 2 minutes for complex queries
 
-// Get warehouse ID from server config
+// Get warehouse ID from server config (no fallbacks)
 let warehouseId: string | null = null;
 
 async function getWarehouseId(): Promise<string> {
   if (!warehouseId) {
-    try {
-      const response = await axios.get('/api/config');
-      warehouseId = response.data.warehouseId;
-    } catch (error) {
-      console.warn('Failed to get warehouse ID from config, using default');
-      warehouseId = 'a274378bae39d2e1'; // fallback
-    }
+    const response = await axios.get('/api/config');
+    warehouseId = response.data?.warehouseId || null;
+  }
+  if (!warehouseId) {
+    throw new Error('DATABRICKS_WAREHOUSE_ID is not configured. Please set it in your environment.');
   }
   return warehouseId;
 }
@@ -72,18 +70,12 @@ export async function fetchCatalogMetadata(): Promise<CatalogItem[]> {
     
   } catch (error) {
     console.error('Failed to fetch catalog metadata:', error);
-    
     if (axios.isAxiosError(error)) {
-      console.error('API Error:', error.response?.status, error.response?.data);
-      if (error.response?.status === 401) {
-        throw new Error('Databricks authentication failed. Please check your token.');
-      }
-      if (error.response?.status === 403) {
-        throw new Error('Access denied. Please check your Unity Catalog permissions.');
-      }
+      const status = error.response?.status;
+      const msg = error.response?.data?.message || error.message;
+      throw new Error(`Unity Catalog list failed (${status}): ${msg}`);
     }
-    
-    return [];
+    throw error;
   }
 }
 
@@ -186,24 +178,49 @@ export async function executeDatabricksQuery(sql: string, opts?: { signal?: Abor
     const response = await axios.post(`/api/databricks/2.0/sql/statements`, {
       statement: sql,
       warehouse_id,
-      wait_timeout: '30s', // Maximum allowed by Databricks (5-50s range)
-      disposition: 'EXTERNAL_LINKS'
+      wait_timeout: '30s', // allowed 5-50s; 30s is a balanced default
+      disposition: 'INLINE'
     }, { signal: opts?.signal });
 
     const executionTime = Date.now() - startTime;
     const requestId = (response.headers as any)?.['x-request-id'] || response.data?.status?.request_id;
-    
-    // Transform Databricks response to our format
-    const result = response.data.result;
+
+    // Transform Databricks response to our format (server assembles EXTERNAL_LINKS)
+    const result = response.data?.result;
     if (!result) {
-      throw new Error('No result returned from query');
+      // Try direct poll via backend passthrough (server polls if needed)
+      const retry = await axios.post(`/api/databricks/2.0/sql/statements`, {
+        statement: sql,
+        warehouse_id,
+        wait_timeout: '30s',
+        disposition: 'EXTERNAL_LINKS'
+      }, { signal: opts?.signal });
+      if (!retry.data?.result) throw new Error('No result returned from query');
+      const r2 = retry.data.result;
+      const columnsFromManifest2: string[] = r2.manifest?.schema?.columns?.map((c: any) => c.name) || [];
+      const rows2: any[][] = Array.isArray(r2.data_array) ? r2.data_array : [];
+      const executionTime2 = Date.now() - startTime;
+      const requestId2 = (retry.headers as any)?.['x-request-id'] || retry.data?.status?.request_id;
+      return {
+        columns: columnsFromManifest2,
+        rows: rows2,
+        executionTime: executionTime2,
+        rowCount: typeof r2.row_count === 'number' ? r2.row_count : rows2.length,
+        metadata: { requestId: requestId2 }
+      };
     }
 
+    // Columns come from the manifest schema
+    const columnsFromManifest: string[] = result.manifest?.schema?.columns?.map((c: any) => c.name) || [];
+
+    // Expect server to provide data_array even when EXTERNAL_LINKS are used
+    const rows: any[][] = Array.isArray(result.data_array) ? result.data_array : [];
+
     const resultObj: QueryResult = {
-      columns: result.data_array?.[0] || [],
-      rows: result.data_array?.slice(1) || [],
+      columns: columnsFromManifest,
+      rows,
       executionTime,
-      rowCount: result.row_count || 0,
+      rowCount: typeof result.row_count === 'number' ? result.row_count : rows.length,
       metadata: { requestId }
     };
     return resultObj;
@@ -265,17 +282,7 @@ export async function executeDatabricksQuery(sql: string, opts?: { signal?: Abor
         };
       }
       
-      // Handle HTTP errors
-      if (error.response?.status === 404 || error.response?.status === 500) {
-        console.warn('Falling back to mock data for development');
-        return {
-          columns: ['Note'],
-          rows: [['🔧 SQL execution not available - configure DATABRICKS_WAREHOUSE_ID']],
-          executionTime: 100,
-          rowCount: 1,
-          error: 'SQL warehouse not configured'
-        };
-      }
+      // Do not return mock data; surface actual error for clarity
     }
     
     // Generic error fallback
@@ -296,74 +303,38 @@ export async function executeDatabricksQuery(sql: string, opts?: { signal?: Abor
   }
 }
 
-export async function getTableProfile(catalog: string, schema: string, table: string): Promise<DataProfile> {
+export async function getTableProfile(catalog: string, schema: string, table: string, mode: ProfileMode = 'fast'): Promise<DataProfile> {
   try {
     console.log(`📊 Simplified table profiling: ${catalog}.${schema}.${table}`);
     
     const tableRef = `${catalog}.${schema}.${table}`;
     
-    // SIMPLIFIED APPROACH: Just get metadata, skip complex queries for now
-    console.log('⚡ Using metadata-only profiling due to warehouse warm-up');
+    // Progressive profiling depending on mode
+    console.log(`⚡ Profiling mode: ${mode}`);
     
     // Only do the absolutely essential metadata query that should work instantly
     let columnCount = 0;
     let dataTypes: { [key: string]: number } = {};
     
-    // PRIMARY: Try Unity Catalog first - it's always fast and reliable
+    // Minimal metrics only: just row count
     try {
-      console.log('📋 Using Unity Catalog API for reliable profiling');
       const catalogColumns = await axios.get(`${API_BASE}/unity-catalog/tables/${catalog}.${schema}.${table}`);
       const columns = catalogColumns.data.columns || [];
       columnCount = columns.length;
-      
-      // Create data type distribution from Unity Catalog schema
-      const typeDistribution: { [key: string]: number } = {};
-      columns.forEach((col: any) => {
-        const dataType = col.type_name?.toLowerCase() || 'unknown';
-        const baseType = dataType.split('(')[0]; // Remove precision/scale info
-        typeDistribution[baseType] = (typeDistribution[baseType] || 0) + 1;
-      });
-      
-      dataTypes = typeDistribution;
-      console.log(`✅ Unity Catalog: Found ${columnCount} columns with types:`, Object.keys(dataTypes).join(', '));
-      
-    } catch (unityError) {
-      console.warn('Unity Catalog failed, trying INFORMATION_SCHEMA as fallback');
-      
-      // FALLBACK: Only try SQL if Unity Catalog fails
-      try {
-        const columnMetadata = await executeDatabricksQuery(`
-          SELECT COUNT(*) as column_count
-          FROM INFORMATION_SCHEMA.COLUMNS 
-          WHERE TABLE_NAME = '${table}'
-            AND TABLE_SCHEMA = '${schema}'
-            AND TABLE_CATALOG = '${catalog}'
-        `);
-        
-        // Check if the query actually succeeded (no error property)
-        if (columnMetadata && !columnMetadata.error && columnMetadata.rows.length > 0) {
-          columnCount = Number(columnMetadata.rows[0][0]) || 0;
-          dataTypes = { 'information_schema': columnCount };
-          console.log(`✅ INFORMATION_SCHEMA fallback: Found ${columnCount} columns`);
-        } else {
-          // Query returned but had errors or no results
-          console.warn('INFORMATION_SCHEMA query failed or returned no results:', columnMetadata?.error);
-          throw new Error('SQL query failed');
-        }
-      } catch (sqlError) {
-        console.warn('Both Unity Catalog and INFORMATION_SCHEMA failed, using minimal profile');
-        columnCount = 0;
-        dataTypes = { 'unavailable': 1 };
-      }
+    } catch {}
+    let totalRows = 0;
+    try {
+      const countResult = await executeDatabricksQuery(`SELECT COUNT(*) AS cnt FROM ${catalog}.${schema}.${table}`);
+      const v = Number(countResult.rows?.[0]?.[0]);
+      if (!Number.isNaN(v)) totalRows = v;
+    } catch (e) {
+      console.warn('COUNT(*) failed; showing 0 until run succeeds');
     }
-    
-    console.log(`📈 Simplified table profile: 0 rows (not computed), ${columnCount} columns`);
-    
-    // Return simplified profile - no expensive row counting for now
-    const distribution = Object.keys(dataTypes).length > 0 ? dataTypes : { 'metadata_only': 1 };
+
+    const distribution = undefined;
     
     return {
-      totalRows: 0, // Skip expensive row counting during warehouse warmup
+      totalRows,
       nullCount: 0,
       uniqueCount: 0,
       dataType: 'TABLE',
@@ -372,11 +343,13 @@ export async function getTableProfile(catalog: string, schema: string, table: st
       metadata: {
         columnCount: columnCount,
         nullableColumns: 0,
-        tableSize: 'Not computed (warehouse warming up)',
+        tableSize: 'Unknown',
         lastUpdated: 'Unknown',
-        profilingMethod: columnCount > 0 ? 'Unity Catalog API (fast)' : 'Minimal profile',
+        profilingMethod: 'Minimal: COUNT(*)',
         isApproximate: false,
-        performanceNote: columnCount > 0 ? '⚡ Fast profiling via Unity Catalog metadata' : '⚠️ Limited data available'
+        performanceNote: 'Minimal profiling enabled',
+        mode: 'fast',
+        updatedAt: new Date().toISOString()
       }
     };
     
@@ -436,25 +409,16 @@ export async function getColumnProfile(catalog: string, schema: string, table: s
     const tableRef = `${catalog}.${schema}.${table}`;
     const columnRef = `\`${column}\``;  // Escape column name
     
-    // STEP 1: Essential stats in one optimized query (recommended approach)
+    // Minimal stats: total rows and null count and approximate distinct
     const essentialStatsQuery = `
       SELECT 
         COUNT(*) AS total_rows,
         SUM(CASE WHEN ${columnRef} IS NULL THEN 1 ELSE 0 END) AS null_count,
-        100.0 * SUM(CASE WHEN ${columnRef} IS NULL THEN 1 ELSE 0 END) / COUNT(*) AS null_pct,
         APPROX_COUNT_DISTINCT(${columnRef}) AS approx_unique
       FROM ${tableRef}
     `;
-    
-    console.log('🔥 Computing null% and approximate uniqueness');
     const statsResult = await executeDatabricksQuery(essentialStatsQuery);
-    const [totalRows, nullCount, nullPct, approxUnique] = statsResult.rows[0] || [0, 0, 0, 0];
-    
-    console.log(`🔍 Column stats raw result:`, {
-      query: essentialStatsQuery,
-      result: statsResult.rows[0],
-      totalRows, nullCount, nullPct, approxUnique
-    });
+    const [totalRows, nullCount, approxUnique] = statsResult.rows[0] || [0, 0, 0];
     
     // STEP 2: Get column data type from metadata (instant)
     const columnInfoQuery = `
@@ -475,7 +439,7 @@ export async function getColumnProfile(catalog: string, schema: string, table: s
     }
     
     // STEP 3: Type-specific profiling based on data type
-    const numericTypes = ['int', 'bigint', 'float', 'double', 'decimal', 'numeric'];
+    const numericTypes = ['tinyint','smallint','int','integer','bigint','float','double','real','decimal','numeric'];
     const isNumeric = numericTypes.some(type => dataType.toLowerCase().includes(type));
     const isString = dataType.toLowerCase().includes('string') || dataType.toLowerCase().includes('varchar');
     const isDate = dataType.toLowerCase().includes('date') || dataType.toLowerCase().includes('timestamp');
@@ -483,50 +447,48 @@ export async function getColumnProfile(catalog: string, schema: string, table: s
     let min: any = null;
     let max: any = null; 
     let avg: any = null;
+    let stddev: any = null;
+    let percentiles: any = undefined;
     let distribution: { [key: string]: number } | undefined;
     
-    // NUMERIC COLUMNS: Get min, max, average (enterprise requirement)
+    // NUMERIC COLUMNS: min, max, avg, sum
     if (isNumeric) {
       try {
-        console.log('📊 Computing numeric stats: min/max/avg');
+        console.log('📊 Computing numeric stats: min/max/avg/sum');
         const numericStatsQuery = `
           SELECT 
             MIN(${columnRef}) AS min_val, 
             MAX(${columnRef}) AS max_val, 
-            AVG(${columnRef}) AS avg_val 
+            AVG(${columnRef}) AS avg_val,
+            SUM(${columnRef}) AS sum_val
           FROM ${tableRef}
         `;
         const numericResult = await executeDatabricksQuery(numericStatsQuery);
-        [min, max, avg] = numericResult.rows[0] || [null, null, null];
+        const row = numericResult.rows[0] || [];
+        min = row[0] ?? null; max = row[1] ?? null; avg = row[2] ?? null; const sum = row[3] ?? null;
+        // repurpose stddev for now to show sum in minimal mode UI, or add as separate field in metadata
+        percentiles = undefined;
+        stddev = undefined;
+        // attach sum to metadata for display
+        if (!statsResult.metadata) statsResult.metadata = {} as any;
+        (statsResult.metadata as any).sum = sum;
       } catch (e) {
         console.warn('Failed to compute numeric stats:', e);
       }
     }
     
-    // CATEGORICAL/DATE COLUMNS: Top-N frequency (enterprise requirement)
-    if (isString || isDate) {
+    // STRING COLUMNS: length and approx distinct
+    let lengthAvg: number | undefined = undefined;
+    if (isString) {
       try {
-        console.log('📈 Computing top-10 frequency distribution');
-        const topValuesQuery = `
-          SELECT ${columnRef} AS value, COUNT(*) AS freq 
-          FROM ${tableRef} 
-          WHERE ${columnRef} IS NOT NULL 
-          GROUP BY ${columnRef} 
-          ORDER BY freq DESC 
-          LIMIT 10
-        `;
-        const topResult = await executeDatabricksQuery(topValuesQuery);
-        distribution = {};
-        topResult.rows.forEach(([value, freq]) => {
-          distribution![String(value)] = Number(freq);
-        });
+        const lengthQuery = `SELECT AVG(length(${columnRef})) AS len_avg FROM ${tableRef}`;
+        const lenRes = await executeDatabricksQuery(lengthQuery);
+        lengthAvg = Number(lenRes.rows?.[0]?.[0]) || undefined;
       } catch (e) {
-        console.warn('Failed to compute frequency distribution:', e);
+        console.warn('Failed to compute average length:', e);
       }
     }
     
-    
-    console.log(`🎯 Column profile complete: ${nullPct?.toFixed(1) || 0}% null, ~${approxUnique || 0} unique values`);
     
     return {
       totalRows: Number(totalRows) || 0,
@@ -539,10 +501,9 @@ export async function getColumnProfile(catalog: string, schema: string, table: s
       max,
       mean: avg,
       metadata: {
-        nullPercentage: Number(nullPct) || 0,
-        isApproximate: true, // APPROX_COUNT_DISTINCT is approximate
-        profilingMethod: 'Enterprise: null%/unique/min/max/avg/top-N',
-        performanceNote: 'Optimized for large tables. Uniqueness is approximate. Sample data in query results.'
+        isApproximate: true,
+        profilingMethod: 'Minimal: null count, distinct, numeric summary or string length',
+        performanceNote: 'Minimal profiling enabled'
       }
     };
     

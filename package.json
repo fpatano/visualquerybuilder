@@ -22,6 +22,7 @@
     "http-proxy-middleware": "^2.0.6",
     "lucide-react": "^0.294.0",
     "monaco-editor": "^0.44.0",
+    "node-sql-parser": "^5.3.11",
     "pino-http": "^10.5.0",
     "react": "^18.2.0",
     "react-beautiful-dnd": "^13.1.1",

@@ -1,6 +1,61 @@
-import { QueryState } from '../types';
+import { QueryState, ParsedSQL } from '../types';
+import { RobustSQLParser, parseSQL as parseRobustSQL, generateSQL as generateRobustSQL } from './sql-transpiler/robust-parser';
+import { SQLTranspiler } from './sql-transpiler';
+
+// Create a singleton parser instance for better performance
+const robustParser = new RobustSQLParser({
+  debugMode: process.env.NODE_ENV === 'development'
+});
+
+// Create a singleton transpiler instance for better performance
+const transpiler = new SQLTranspiler({
+  debugMode: process.env.NODE_ENV === 'development',
+  preserveUserPositions: true,
+  enableColumnFetching: false // Disabled for performance in real-time generation
+});
 
 export function generateSQL(queryState: QueryState): string {
+  // Multi-level fallback strategy for maximum reliability
+  
+  // Level 1: Try the robust parser (direct AST-based approach)
+  try {
+    const result = robustParser.generateSQL(queryState);
+    if (result.success && result.sql) {
+      console.log('✅ Using robust SQL generation (Level 1)');
+      return result.sql;
+    } else {
+      console.warn('⚠️ Robust SQL generation failed (Level 1), trying transpiler (Level 2):', result.errors);
+    }
+  } catch (error) {
+    console.warn('🚨 Robust SQL generation error (Level 1), trying transpiler (Level 2):', error);
+  }
+  
+  // Level 2: Try the transpiler (higher-level orchestrator)
+  try {
+    const result = transpiler.canvasToSQL(queryState);
+    if (result.success && result.data) {
+      console.log('✅ Using transpiler SQL generation (Level 2)');
+      return result.data;
+    } else {
+      console.warn('⚠️ Transpiler SQL generation failed (Level 2), falling back to legacy (Level 3):', result.errors);
+    }
+  } catch (error) {
+    console.warn('🚨 Transpiler SQL generation error (Level 2), falling back to legacy (Level 3):', error);
+  }
+  
+  // Level 3: Fallback to legacy generator
+  try {
+    const sql = generateSQLLegacy(queryState);
+    console.log('⚠️ Using legacy SQL generation (Level 3)');
+    return sql;
+  } catch (legacyError) {
+    console.error('🚨 All SQL generation methods failed:', legacyError);
+    return '-- SQL generation failed: All methods exhausted';
+  }
+}
+
+// Legacy SQL generator as fallback
+function generateSQLLegacy(queryState: QueryState): string {
   const { tables, joins, filters, aggregations, selectedColumns, groupByColumns, orderByColumns, limit } = queryState;
   
   if (tables.length === 0) {
@@ -41,11 +96,13 @@ export function generateSQL(queryState: QueryState): string {
   
   // Build JOIN clauses
   joins.forEach(join => {
+    console.log('🔗 Processing join in generator:', { join, availableTables: tables.map(t => ({ id: t.id, name: t.name })) });
     const joinType = join.joinType === 'INNER' ? 'INNER JOIN' : 
                     join.joinType === 'LEFT' ? 'LEFT JOIN' :
                     join.joinType === 'RIGHT' ? 'RIGHT JOIN' : 'FULL OUTER JOIN';
     
     const targetTable = tables.find(t => t.id === join.targetTable);
+    console.log('🔍 Looking for targetTable:', join.targetTable, 'found:', targetTable?.id);
     if (targetTable) {
       // Basic compatibility guard: block obviously invalid joins if we have types on columns
       // Note: ColumnInfo.type naming aligns with Unity Catalog type names (string, int, bigint, decimal, date, timestamp, etc.)
@@ -64,12 +121,21 @@ export function generateSQL(queryState: QueryState): string {
         return false;
       };
 
+      let joinIsCompatible = true;
       if (sourceCol && targetCol && !compatible(sourceCol.dataType, targetCol.dataType)) {
-        throw new Error(`Invalid JOIN: ${join.sourceTable}.${join.sourceColumn} (${sourceCol.dataType}) incompatible with ${join.targetTable}.${join.targetColumn} (${targetCol.dataType})`);
+        joinIsCompatible = false;
+        // Do not throw: add a comment and skip this JOIN to avoid crashing the UI
+        sql += `\n-- Skipped invalid JOIN: ${join.sourceTable}.${join.sourceColumn} (${sourceCol.dataType}) incompatible with ${join.targetTable}.${join.targetColumn} (${targetCol.dataType})`;
       }
 
-      sql += `\n${joinType} ${targetTable.catalog}.${targetTable.schema}.${targetTable.name} AS ${join.targetTable}`;
-      sql += `\n  ON ${join.sourceTable}.${join.sourceColumn} = ${join.targetTable}.${join.targetColumn}`;
+      if (joinIsCompatible) {
+        sql += `\n${joinType} ${targetTable.catalog}.${targetTable.schema}.${targetTable.name} AS ${join.targetTable}`;
+        sql += `\n  ON ${join.sourceTable}.${join.sourceColumn} = ${join.targetTable}.${join.targetColumn}`;
+      }
+    } else {
+      // Target table not found; add a helpful comment and continue
+      console.log('❌ Target table not found for join:', { targetTable: join.targetTable, availableTables: tables.map(t => t.id) });
+      sql += `\n-- Skipped JOIN: target table not found for ${join.targetTable}`;
     }
   });
   
@@ -137,21 +203,156 @@ export function generateSQL(queryState: QueryState): string {
 }
 
 export function parseSQL(sql: string): Partial<QueryState> {
-  // Basic SQL parsing - this is a simplified implementation
-  // In a production app, you'd want a more robust SQL parser
+  // Multi-level fallback strategy for maximum reliability
   
-  const queryState: Partial<QueryState> = {
-    tables: [],
-    joins: [],
-    filters: [],
-    aggregations: [],
-    selectedColumns: [],
-    groupByColumns: [],
-    orderByColumns: []
-  };
+  // Level 1: Try the robust parser (direct AST-based approach)
+  try {
+    const result = robustParser.parseSQL(sql);
+    if (result.success && result.data) {
+      console.log('✅ Using robust SQL parsing (Level 1)');
+      return result.data;
+    } else {
+      console.warn('⚠️ Robust SQL parsing failed (Level 1), trying transpiler (Level 2):', result.errors);
+    }
+  } catch (error) {
+    console.warn('🚨 Robust SQL parsing error (Level 1), trying transpiler (Level 2):', error);
+  }
   
-  // This is a placeholder - implement proper SQL parsing based on your needs
-  console.log('Parsing SQL:', sql);
+  // Level 2: Skip transpiler for now due to async nature (would require API change)
+  // TODO: Consider making parseSQL async in the future
   
-  return queryState;
+  // Level 3: Fallback to legacy parser
+  try {
+    const result = parseSQLLegacy(sql);
+    console.log('⚠️ Using legacy SQL parsing (Level 3)');
+    return result;
+  } catch (legacyError) {
+    console.error('🚨 All SQL parsing methods failed:', legacyError);
+    return {};
+  }
+}
+
+// Legacy SQL parser as fallback
+function parseSQLLegacy(sql: string): Partial<QueryState> {
+  const parsed = quickParse(sql);
+  if (!parsed) return {};
+
+  const tablesMap = new Map<string, { id: string; catalog: string; schema: string; name: string }>();
+  const tables = parsed.tables.map((t) => {
+    // Preserve the original alias from SQL instead of generating new IDs
+    const id = t.alias;
+    tablesMap.set(t.alias, { id, catalog: t.catalog, schema: t.schema, name: t.name });
+    return {
+      id,
+      name: t.name,
+      schema: t.schema,
+      catalog: t.catalog,
+      columns: [],
+      position: { x: 200 + tablesMap.size * 220, y: 160 }
+    };
+  });
+
+  const joins = parsed.joins.map(j => {
+    const left = tablesMap.get(j.leftAlias);
+    const right = tablesMap.get(j.rightAlias);
+    if (!left || !right) {
+      console.warn('❌ Join references missing table:', { leftAlias: j.leftAlias, rightAlias: j.rightAlias, availableTables: Array.from(tablesMap.keys()) });
+      return null as any;
+    }
+    const joinResult = {
+      id: `${left.id}.${j.leftColumn}__${right.id}.${j.rightColumn}`,
+      sourceTable: left.id,
+      targetTable: right.id,
+      sourceColumn: j.leftColumn,
+      targetColumn: j.rightColumn,
+      joinType: j.joinType
+    };
+    return joinResult;
+  }).filter(Boolean);
+
+  const selectedColumns = parsed.selects.map(s => ({
+    id: `${s.alias}.${s.column}`,
+    table: tablesMap.get(s.alias || '')?.id || tables[0]?.id || '',
+    column: s.column,
+    alias: s.as
+  })).filter(sc => sc.table);
+
+  return { tables, joins, selectedColumns } as Partial<QueryState>;
+}
+
+// Very lightweight parser for common patterns (catalog.schema.table alias, INNER/LEFT/RIGHT/FULL ... ON a.col = b.col)
+function quickParse(sql: string): ParsedSQL | null {
+  const text = sql.replace(/\s+/g, ' ').trim();
+  console.log('🔍 Parsing SQL:', text);
+  
+  if (!/from\s+/i.test(text)) {
+    console.log('❌ No FROM clause found');
+    return null;
+  }
+
+  // SELECT list
+  const selectMatch = text.match(/^select\s+(.*?)\s+from\s+/i);
+  const selects: any[] = [];
+  if (selectMatch) {
+    const sel = selectMatch[1];
+    sel.split(',').map(s => s.trim()).forEach(part => {
+      // alias.col [AS name]
+      const m = part.match(/^(\w+)\.(\w+)(?:\s+as\s+(\w+))?$/i);
+      if (m) selects.push({ alias: m[1], column: m[2], as: m[3] });
+    });
+  }
+
+  // FROM tables with aliases
+  const fromToEnd = text.split(/\sfrom\s/i)[1] || '';
+  const whereSplit = fromToEnd.split(/\swhere\s/i)[0];
+  const fromPart = whereSplit;
+
+  // Match both explicit (AS alias) and implicit (table alias) patterns
+  const tableRegex = /(\w+)\.(\w+)\.(\w+)\s+(?:as\s+)?(\w+)/ig;
+  const tables: any[] = [];
+  let tm: RegExpExecArray | null;
+  while ((tm = tableRegex.exec(fromPart))) {
+    tables.push({ catalog: tm[1], schema: tm[2], name: tm[3], alias: tm[4] });
+  }
+  console.log('🔍 Parsed tables:', tables);
+  
+  if (tables.length === 0) {
+    console.log('❌ No tables found with pattern catalog.schema.table [AS] alias');
+    return null;
+  }
+
+  // Joins - handle multiple patterns
+  const joins: any[] = [];
+  
+  // Pattern 1: JOIN catalog.schema.table [AS] alias ON alias1.col = alias2.col
+  const joinRegex1 = /(inner|left|right|full)?\s*join\s+(\w+)\.(\w+)\.(\w+)\s+(?:as\s+)?(\w+)\s+on\s+(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)/ig;
+  let jm1: RegExpExecArray | null;
+  while ((jm1 = joinRegex1.exec(fromPart))) {
+    const jt = (jm1[1] || 'INNER').toUpperCase();
+    joins.push({
+      joinType: (jt === 'INNER' || jt === 'LEFT' || jt === 'RIGHT' || jt === 'FULL') ? jt : 'INNER',
+      leftAlias: jm1[6],
+      leftColumn: jm1[7],
+      rightAlias: jm1[8],
+      rightColumn: jm1[9]
+    });
+  }
+  
+  // Pattern 2: JOIN table_name [AS] alias ON alias1.col = alias2.col (without full qualification)
+  const joinRegex2 = /(inner|left|right|full)?\s*join\s+(\w+)\s+(?:as\s+)?(\w+)\s+on\s+(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)/ig;
+  let jm2: RegExpExecArray | null;
+  while ((jm2 = joinRegex2.exec(fromPart))) {
+    const jt = (jm2[1] || 'INNER').toUpperCase();
+    joins.push({
+      joinType: (jt === 'INNER' || jt === 'LEFT' || jt === 'RIGHT' || jt === 'FULL') ? jt : 'INNER',
+      leftAlias: jm2[4],
+      leftColumn: jm2[5],
+      rightAlias: jm2[6],
+      rightColumn: jm2[7]
+    });
+  }
+  
+  console.log('🔍 Parsed:', { tables: tables.length, joins: joins.length, selects: selects.length });
+
+  return { tables, joins, selects } as ParsedSQL;
 }

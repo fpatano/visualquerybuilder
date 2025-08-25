@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { TrendingUp, Database, Hash, Percent, Clock, AlertCircle } from 'lucide-react';
 import { useQueryBuilder } from '../../contexts/QueryBuilderContext';
@@ -6,10 +6,11 @@ import { useQueryBuilder } from '../../contexts/QueryBuilderContext';
 const ProfilingPane: React.FC = () => {
   const { state, loadDataProfile } = useQueryBuilder();
   const { selectedTable, selectedColumn, dataProfile, isLoadingProfile } = state;
+  const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
     if (selectedTable) {
-      loadDataProfile(selectedTable, selectedColumn || undefined);
+      loadDataProfile(selectedTable, selectedColumn || undefined, 'fast');
     }
   }, [selectedTable, selectedColumn, loadDataProfile]);
 
@@ -117,7 +118,7 @@ const ProfilingPane: React.FC = () => {
         </div>
 
         {/* Numeric Stats (if available) */}
-        {(dataProfile.min !== null || dataProfile.max !== null || dataProfile.mean !== null) && (
+        {(dataProfile.min !== null || dataProfile.max !== null || dataProfile.mean !== null || dataProfile.stddev !== undefined) && (
           <div>
             <h4 className="text-sm font-semibold text-databricks-dark-blue mb-3">Numeric Range</h4>
             <div className="grid grid-cols-3 gap-2">
@@ -140,6 +141,28 @@ const ProfilingPane: React.FC = () => {
                 </div>
               )}
             </div>
+            {(dataProfile.percentiles || dataProfile.stddev !== undefined) && (
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                {dataProfile.stddev !== undefined && (
+                  <div className="bg-purple-50 rounded-lg p-2 border border-purple-200">
+                    <div className="text-xs text-purple-700 mb-1">Std Dev</div>
+                    <div className="text-sm font-semibold text-purple-900">{Number(dataProfile.stddev).toFixed(2)}</div>
+                  </div>
+                )}
+                {dataProfile.percentiles && (
+                  <div className="bg-white rounded-lg p-2 border">
+                    <div className="text-xs text-databricks-dark-gray mb-1">Percentiles</div>
+                    <div className="text-xs text-databricks-dark-blue space-x-2">
+                      {dataProfile.percentiles.p25 !== undefined && <span>P25: {Number(dataProfile.percentiles.p25).toFixed(2)}</span>}
+                      {dataProfile.percentiles.p50 !== undefined && <span>P50: {Number(dataProfile.percentiles.p50).toFixed(2)}</span>}
+                      {dataProfile.percentiles.p75 !== undefined && <span>P75: {Number(dataProfile.percentiles.p75).toFixed(2)}</span>}
+                      {dataProfile.percentiles.p90 !== undefined && <span>P90: {Number(dataProfile.percentiles.p90).toFixed(2)}</span>}
+                      {dataProfile.percentiles.p99 !== undefined && <span>P99: {Number(dataProfile.percentiles.p99).toFixed(2)}</span>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -304,11 +327,18 @@ const ProfilingPane: React.FC = () => {
   return (
     <div className="h-full flex flex-col bg-white">
       {/* Header */}
-      <div className="p-4 border-b border-databricks-medium-gray">
+      <div className="p-4 border-b border-databricks-medium-gray flex items-center justify-between">
         <h3 className="text-lg font-semibold text-databricks-dark-blue flex items-center space-x-2">
           <Database className="w-5 h-5" />
           <span>Data Profile</span>
         </h3>
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="p-1.5 text-databricks-dark-gray hover:text-databricks-blue transition-colors"
+          title={isExpanded ? 'Collapse' : 'Expand'}
+        >
+          <span className="text-xs">{isExpanded ? 'Collapse' : 'Expand'}</span>
+        </button>
       </div>
 
       {/* Content */}
@@ -329,9 +359,58 @@ const ProfilingPane: React.FC = () => {
             </div>
           </div>
         ) : selectedColumn ? (
-          renderColumnProfile()
+          // Minimal column view
+          <div className={`${isExpanded ? '' : ''} space-y-3`}>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-databricks-light-gray p-3 rounded-lg">
+                <div className="text-xs text-databricks-dark-gray">Null Count</div>
+                <div className="text-lg font-semibold text-databricks-dark-blue">{dataProfile?.nullCount?.toLocaleString?.() || 0}</div>
+              </div>
+              <div className="bg-databricks-light-gray p-3 rounded-lg">
+                <div className="text-xs text-databricks-dark-gray">Distinct</div>
+                <div className="text-lg font-semibold text-databricks-dark-blue">{dataProfile?.uniqueCount?.toLocaleString?.() || 0}</div>
+              </div>
+            </div>
+
+            {/* Numeric summary */}
+            {(dataProfile?.dataType || '').toLowerCase().match(/int|bigint|float|double|real|decimal|numeric/) ? (
+              <div className="grid grid-cols-4 gap-3">
+                <div className="bg-white p-3 rounded border">
+                  <div className="text-xs text-databricks-dark-gray">Min</div>
+                  <div className="text-sm font-semibold">{String(dataProfile?.min ?? '')}</div>
+                </div>
+                <div className="bg-white p-3 rounded border">
+                  <div className="text-xs text-databricks-dark-gray">Avg</div>
+                  <div className="text-sm font-semibold">{dataProfile?.mean != null ? Number(dataProfile.mean).toFixed(2) : ''}</div>
+                </div>
+                <div className="bg-white p-3 rounded border">
+                  <div className="text-xs text-databricks-dark-gray">Max</div>
+                  <div className="text-sm font-semibold">{String(dataProfile?.max ?? '')}</div>
+                </div>
+                <div className="bg-white p-3 rounded border">
+                  <div className="text-xs text-databricks-dark-gray">Sum</div>
+                  <div className="text-sm font-semibold">{/* sum stored in metadata if available */}{(dataProfile?.metadata as any)?.sum ?? ''}</div>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-white p-3 rounded border">
+                  <div className="text-xs text-databricks-dark-gray">Avg Length</div>
+                  <div className="text-sm font-semibold">{(dataProfile?.metadata as any)?.lengthAvg != null ? Number((dataProfile?.metadata as any)?.lengthAvg).toFixed(1) : ''}</div>
+                </div>
+              </div>
+            )}
+          </div>
         ) : (
-          renderTableProfile()
+          // Minimal table view
+          <div className={`${isExpanded ? '' : ''} space-y-3`}>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-databricks-light-gray p-3 rounded-lg">
+                <div className="text-xs text-databricks-dark-gray">Row Count</div>
+                <div className="text-lg font-semibold text-databricks-dark-blue">{dataProfile?.totalRows?.toLocaleString?.() || 0}</div>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>
