@@ -44,6 +44,7 @@ export class RobustSQLParser {
   private parser: Parser;
   private debugMode: boolean;
   private tableMapping: Map<string, string> = new Map();
+  private currentTables: TableNode[] = [];
 
   constructor(options: { debugMode?: boolean } = {}) {
     this.parser = new Parser();
@@ -66,8 +67,10 @@ export class RobustSQLParser {
       
       // Handle three-part table names by preprocessing
       const preprocessedSQL = this.preprocessSQL(sql);
+      this.log('🔍 Preprocessed SQL:', preprocessedSQL);
       
       const ast = this.parser.astify(preprocessedSQL);
+      this.log('🔍 AST structure:', JSON.stringify(ast, null, 2).substring(0, 1000));
 
       if (!ast) {
         return {
@@ -282,7 +285,10 @@ export class RobustSQLParser {
     const tables: TableNode[] = [];
     const joins: JoinRelation[] = [];
     
+    this.log('🔍 FROM array structure:', JSON.stringify(fromArray, null, 2));
+    
     fromArray.forEach((fromItem, index) => {
+      this.log(`🔍 Processing FROM item ${index}:`, JSON.stringify(fromItem, null, 2));
       // Extract table information
       const tableName = fromItem.table;
       const alias = fromItem.as || tableName;
@@ -322,6 +328,7 @@ export class RobustSQLParser {
           }
         };
         
+        this.log(`🔧 Created table: id="${table.id}", name="${table.name}", alias="${alias}"`);
         tables.push(table);
         
         // Extract join information if this is a joined table
@@ -428,6 +435,18 @@ export class RobustSQLParser {
   private canvasStateToSQL(canvasState: QueryState): string {
     const { tables, joins, selectedColumns, filters, aggregations, groupByColumns, orderByColumns, limit } = canvasState;
 
+    // Store current tables for reference in helper methods
+    this.currentTables = tables;
+
+    this.log('🔧 Starting SQL generation from canvas state:', {
+      tableCount: tables.length,
+      joinCount: joins.length,
+      selectedColumnCount: selectedColumns.length,
+      filterCount: filters.length
+    });
+    
+    this.log('🔧 Available tables for SQL generation:', tables.map(t => ({ id: t.id, name: t.name })));
+
     if (tables.length === 0) {
       throw new Error('No tables specified');
     }
@@ -439,14 +458,20 @@ export class RobustSQLParser {
 
     // Add selected columns
     selectedColumns.forEach(col => {
-      const columnRef = `${col.table}.${col.column}`;
+      // Find the table by the table name to get the correct alias
+      const table = tables.find(t => t.name === col.table || t.id === col.table);
+      const tableAlias = table ? table.id : col.table;
+      const columnRef = `${tableAlias}.${col.column}`;
       const selectPart = col.alias ? `${columnRef} AS ${col.alias}` : columnRef;
       selectParts.push(selectPart);
     });
 
     // Add aggregations
     aggregations.forEach(agg => {
-      const columnRef = `${agg.table}.${agg.column}`;
+      // Find the table by the table name to get the correct alias
+      const table = tables.find(t => t.name === agg.table || t.id === agg.table);
+      const tableAlias = table ? table.id : agg.table;
+      const columnRef = `${tableAlias}.${agg.column}`;
       const aggFunc = `${agg.function}(${columnRef})`;
       const selectPart = agg.alias ? `${aggFunc} AS ${agg.alias}` : aggFunc;
       selectParts.push(selectPart);
@@ -459,17 +484,31 @@ export class RobustSQLParser {
 
     sql += selectParts.join(', ');
 
-    // Build FROM clause
+    // Build FROM clause with proper table references
     const mainTable = tables[0];
-    sql += `\nFROM ${this.formatTableReference(mainTable)}`;
+    const fromClause = this.formatTableReference(mainTable);
+    sql += `\nFROM ${fromClause}`;
+    this.log('🔧 FROM clause:', fromClause);
 
-    // Build JOIN clauses
-    joins.forEach(join => {
+    // Build JOIN clauses - use table aliases consistently
+    this.log('🔧 Processing joins:', joins);
+    joins.forEach((join, index) => {
       const targetTable = tables.find(t => t.id === join.targetTable);
-      if (targetTable) {
+      const sourceTable = tables.find(t => t.id === join.sourceTable);
+      this.log(`🔧 Processing join ${index}:`, { join, targetTable, sourceTable });
+      
+      if (targetTable && sourceTable) {
         const joinType = this.formatJoinType(join.joinType);
-        sql += `\n${joinType} ${this.formatTableReference(targetTable)}`;
-        sql += `\n  ON ${join.sourceTable}.${join.sourceColumn} = ${join.targetTable}.${join.targetColumn}`;
+        const joinTableRef = this.formatTableReference(targetTable);
+        // Use table aliases (table.id) for the join condition, not the table names
+        const joinCondition = `ON ${sourceTable.id}.${join.sourceColumn} = ${targetTable.id}.${join.targetColumn}`;
+        
+        sql += `\n${joinType} ${joinTableRef}`;
+        sql += `\n  ${joinCondition}`;
+        
+        this.log(`🔧 Added JOIN ${index}:`, { joinType, joinTableRef, joinCondition });
+      } else {
+        this.log(`⚠️ Target or source table not found for join:`, { join, targetTable, sourceTable });
       }
     });
 
@@ -497,6 +536,7 @@ export class RobustSQLParser {
       sql += `\nLIMIT ${limit}`;
     }
 
+    this.log('🔧 Generated SQL:', sql);
     return sql;
   }
 
@@ -544,7 +584,10 @@ export class RobustSQLParser {
   }
 
   private formatFilterCondition(filter: FilterCondition): string {
-    const columnRef = `${filter.table}.${filter.column}`;
+    // Find the table by the table name to get the correct alias
+    const table = this.currentTables.find(t => t.name === filter.table || t.id === filter.table);
+    const tableAlias = table ? table.id : filter.table;
+    const columnRef = `${tableAlias}.${filter.column}`;
     
     switch (filter.operator) {
       case 'equals':
@@ -613,24 +656,41 @@ export class RobustSQLParser {
     // Clear previous mapping
     this.tableMapping.clear();
     
-    // For now, we'll handle three-part names by mapping them to temporary aliases
+    // Handle three-part names by mapping them to temporary aliases
     // This is a workaround since node-sql-parser doesn't handle catalog.schema.table natively
     
     let processedSQL = sql;
     
-    // Find three-part table names and replace them with simple names
-    const threePartRegex = /(\w+)\.(\w+)\.(\w+)(\s+AS\s+\w+)?/gi;
+    // Step 1: Find three-part table names in FROM clause and replace them with simple names
+    const fromThreePartRegex = /(\w+)\.(\w+)\.(\w+)(\s+AS\s+\w+)?/gi;
     
-    processedSQL = processedSQL.replace(threePartRegex, (match, catalog, schema, table, asClause) => {
+    processedSQL = processedSQL.replace(fromThreePartRegex, (match, catalog, schema, table, asClause) => {
       const fullName = `${catalog}.${schema}.${table}`;
       const simpleName = table; // Use just the table name for parsing
       
       // Store the mapping for later reconstruction
       this.tableMapping.set(simpleName, fullName);
       
-      this.log(`📝 Mapped table: ${simpleName} -> ${fullName}`);
+      this.log(`📝 Mapped FROM table: ${simpleName} -> ${fullName}`);
       
       return simpleName + (asClause || '');
+    });
+    
+    // Step 2: Find three-part table names in JOIN clauses and replace them
+    // Pattern: JOIN catalog.schema.table [AS] alias ON ...
+    const joinThreePartRegex = /JOIN\s+(\w+)\.(\w+)\.(\w+)(\s+AS\s+\w+)?/gi;
+    
+    processedSQL = processedSQL.replace(joinThreePartRegex, (match, catalog, schema, table, asClause) => {
+      const fullName = `${catalog}.${schema}.${table}`;
+      const simpleName = table; // Use just the table name for parsing
+      
+      // Store the mapping for later reconstruction (if not already stored)
+      if (!this.tableMapping.has(simpleName)) {
+        this.tableMapping.set(simpleName, fullName);
+        this.log(`📝 Mapped JOIN table: ${simpleName} -> ${fullName}`);
+      }
+      
+      return 'JOIN ' + simpleName + (asClause || '');
     });
     
     this.log('📝 Preprocessed SQL:', { 

@@ -56,6 +56,64 @@
   stroke-width: 2;
 }
 
+/* Enhanced join edge styling for aesthetic spacing */
+.react-flow__edge-label {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.react-flow__edge-labelbg {
+  rx: 6;
+  ry: 6;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15));
+}
+
+/* Ensure edges render above nodes */
+.react-flow__edge {
+  z-index: 10;
+}
+
+.react-flow__edge-path {
+  z-index: 10;
+}
+
+.react-flow__edge-text {
+  z-index: 11;
+}
+
+.react-flow__edge-label {
+  z-index: 12;
+}
+
+.react-flow__edge-labelbg {
+  z-index: 11;
+}
+
+/* Ensure nodes are below edges */
+.react-flow__node {
+  z-index: 5;
+}
+
+/* Smooth transitions for aesthetic spacing */
+.react-flow__node {
+  transition: transform 0.3s ease-out, box-shadow 0.3s ease-out;
+}
+
+.react-flow__node:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+/* Enhanced canvas background for better visual hierarchy */
+.react-flow__background {
+  transition: opacity 0.3s ease-out;
+}
+
+.react-flow__background:hover {
+  opacity: 0.8;
+}
+
 /* Monaco Editor custom styles */
 .monaco-editor {
   @apply rounded-md;

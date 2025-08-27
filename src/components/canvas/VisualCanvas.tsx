@@ -122,15 +122,35 @@ const VisualCanvasInner: React.FC = () => {
       targetHandle: join.targetColumn,
       type: 'smoothstep',
       label: `${join.joinType}\n${join.sourceColumn} = ${join.targetColumn}`,
-      labelStyle: { fontSize: 11, fontWeight: 600, lineHeight: 1.2 },
-      style: { stroke: join.joinType === 'INNER' ? '#00A1C9' : join.joinType === 'LEFT' ? '#10B981' : join.joinType === 'RIGHT' ? '#F59E0B' : '#8B5CF6', strokeWidth: 2 },
+      labelStyle: { 
+        fontSize: 11, 
+        fontWeight: 600, 
+        lineHeight: 1.2,
+        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        padding: '4px 8px',
+        borderRadius: '4px',
+        border: '1px solid rgba(0, 0, 0, 0.1)',
+        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+      },
+      labelBgStyle: { fill: 'rgba(255, 255, 255, 0.9)' },
+      labelBgPadding: [8, 4],
+      labelBgBorderRadius: 4,
+      style: { 
+        stroke: join.joinType === 'INNER' ? '#00A1C9' : join.joinType === 'LEFT' ? '#10B981' : join.joinType === 'RIGHT' ? '#F59E0B' : '#8B5CF6', 
+        strokeWidth: 4, // Increased for better visibility
+        strokeDasharray: join.joinType === 'INNER' ? 'none' : '5,5',
+        filter: 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2))' // Add shadow for depth
+      },
       markerEnd: {
-        type: MarkerType.ArrowClosed
+        type: MarkerType.ArrowClosed,
+        width: 24, // Larger arrow
+        height: 24,
+        color: join.joinType === 'INNER' ? '#00A1C9' : join.joinType === 'LEFT' ? '#10B981' : join.joinType === 'RIGHT' ? '#F59E0B' : '#8B5CF6'
       }
     }));
     
     if (edges.length > 0) {
-      console.log('🔗 Created', edges.length, 'join edges');
+      console.log('🔗 Created', edges.length, 'join edges with enhanced styling');
     }
     
     return edges;
@@ -150,21 +170,25 @@ const VisualCanvasInner: React.FC = () => {
     if (state.tables.length > 0 && reactFlowNodes.length > 0) {
       // Small delay to ensure nodes are rendered before fitting
       setTimeout(() => {
-        // Calculate optimal padding based on number of tables
-        const padding = Math.min(0.3, Math.max(0.1, 0.1 + (state.tables.length * 0.02)));
+        // Calculate optimal padding based on number of tables and aesthetic spacing
+        const basePadding = 0.2; // Base padding for visual breathing room
+        const tablePadding = Math.min(0.4, Math.max(0.15, basePadding + (state.tables.length * 0.03)));
+        const joinPadding = state.joins.length > 0 ? 0.05 : 0; // Extra padding for joins
+        
+        const totalPadding = Math.min(0.5, tablePadding + joinPadding);
         
         fitView({ 
-          padding, // Dynamic padding based on table count
+          padding: totalPadding, // Enhanced padding for aesthetic spacing
           includeHiddenNodes: false,
-          maxZoom: state.tables.length > 5 ? 0.8 : 1.2, // Zoom out more for many tables
+          maxZoom: state.tables.length > 5 ? 0.7 : 1.1, // Slightly more zoom out for aesthetic spacing
           minZoom: 0.1, // Allow more zoom out for complex queries
-          duration: 1000 // Slightly longer animation for better UX
+          duration: 1200 // Slightly longer animation for smooth aesthetic transitions
         });
         
-        console.log(`🔍 Auto-fitting view for ${state.tables.length} tables with padding ${padding}`);
-      }, 150); // Slightly longer delay for complex layouts
+        console.log(`🎨 Aesthetic auto-fit: ${state.tables.length} tables, ${state.joins.length} joins, padding ${totalPadding}`);
+      }, 300); // Longer delay to ensure aesthetic spacing is fully applied
     }
-  }, [state.tables.length, reactFlowNodes.length, fitView]);
+  }, [state.tables.length, state.joins.length, reactFlowNodes.length, fitView]);
 
   // Close join editor and clear any pending connection when related items disappear
   React.useEffect(() => {
@@ -331,24 +355,28 @@ const VisualCanvasInner: React.FC = () => {
           className="bg-databricks-light-gray"
           onEdgeClick={onEdgeClick}
           onEdgeDoubleClick={onEdgeDoubleClick}
+          // Ensure edges render above nodes for better visibility
+          edgesUpdatable={true}
+          edgesFocusable={true}
+          nodesFocusable={true}
         >
           <Controls 
             className="bg-white border border-databricks-medium-gray shadow-md"
             showInteractive={false}
           >
-            {/* Custom fit view button */}
+            {/* Custom fit view button with aesthetic spacing */}
             <button
               onClick={() => {
                 fitView({ 
-                  padding: 0.15,
+                  padding: 0.25, // Enhanced padding for aesthetic spacing
                   includeHiddenNodes: false,
                   maxZoom: 1.0,
                   minZoom: 0.1,
-                  duration: 600
+                  duration: 800 // Slightly longer for smooth aesthetic transitions
                 });
               }}
               className="react-flow__controls-button"
-              title="Fit all tables in view"
+              title="Fit all tables in view with aesthetic spacing"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M15,3l2.3,2.3l-2.89,2.87l1.42,1.42L18.7,6.7L21,9V3z M6.7,18.7L9,21H3v-6l2.3,2.3l-2.89,2.87l1.42,1.42z M3,9l2.3-2.3l2.87,2.89l1.42-1.42L6.7,6.7L9,3H3z M18.7,17.3L15,21v-6l2.3,2.3l2.87-2.89l1.42,1.42z"/>

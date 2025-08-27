@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
-import { QueryState, CatalogItem, QueryResult, DataProfile, ProfileMode, ProfileCacheEntry } from '../types';
+import { QueryState, CatalogItem, QueryResult, DataProfile, ProfileMode, ProfileCacheEntry, ParsedTableRef } from '../types';
 import { generateSQL, parseSQL } from '../utils/sqlGenerator';
 import { executeDatabricksQuery, getTableProfile, getColumnProfile, fetchColumns, fetchCatalogMetadata, fetchSchemas, fetchTables } from '../services/databricksApi';
 
@@ -176,9 +176,29 @@ function queryBuilderReducer(state: QueryBuilderState, action: QueryBuilderActio
       return { ...state, isLoadingProfile: action.payload };
     
     case 'SET_FROM_PARSED_SQL':
+      // Apply aesthetic spacing to imported tables - ALWAYS use aesthetic spacing for imports
+      const tablesWithSpacing = action.payload.tables.map((table: any, index: number) => {
+        // Force aesthetic spacing for imported tables to ensure proper layout
+        const goldenRatio = 1.618;
+        const baseSpacing = 280 * goldenRatio; // ~453px
+        
+        // Calculate aesthetic position with better distribution
+        const aestheticX = 200 + (index * baseSpacing);
+        const aestheticY = 200 + (index * (baseSpacing * 0.4)); // Reduced vertical spacing for better fit
+        
+        console.log(`🎨 Forcing aesthetic spacing for imported table ${table.name}: (${aestheticX}, ${aestheticY}) - Original: (${table.position.x}, ${table.position.y})`);
+        
+        return {
+          ...table,
+          position: { x: aestheticX, y: aestheticY }
+        };
+      });
+      
+      console.log(`🎯 SET_FROM_PARSED_SQL: Applied aesthetic spacing to ${tablesWithSpacing.length} tables`);
+      
       return {
         ...state,
-        tables: action.payload.tables,
+        tables: tablesWithSpacing,
         joins: action.payload.joins,
         selectedColumns: action.payload.selectedColumns
       };
@@ -228,6 +248,17 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
       dispatch({ type: 'UPDATE_SQL', payload: '-- SQL generation error: please review joins/filters' });
     }
   }, [state.tables, state.joins, state.filters, state.aggregations, state.selectedColumns, state.groupByColumns, state.orderByColumns, state.limit, isApplyingSql]);
+
+  // Debug effect to monitor table position changes
+  useEffect(() => {
+    if (state.tables.length > 0) {
+      console.log('🎯 Tables state updated:', state.tables.map(t => ({
+        name: t.name,
+        position: t.position,
+        id: t.id
+      })));
+    }
+  }, [state.tables]);
 
   // Apply raw SQL to canvas (used for import or explicit sync)
   // Cache for table resolution to avoid repeated lookups
@@ -315,6 +346,7 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
       
       const parsed = parseSQL(sql);
       console.log('📊 Parsing result:', parsed);
+      console.log('📊 Parsed tables:', parsed.tables?.map(t => ({ id: t.id, name: t.name, alias: t.alias })));
       
       if (!parsed) {
         console.error('❌ SQL parsing returned null/undefined');
@@ -330,47 +362,56 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
       
       const existingPositions = new Map(state.tables.map(t => [t.name, t.position]));
       
-      // Smart layout: arrange tables to show joins clearly
+      // Smart layout: arrange tables to show joins clearly with aesthetic spacing
       const layoutTables = (tables: any[], joins: any[]) => {
         const positioned = new Map<string, { x: number; y: number }>();
         const TABLE_WIDTH = 280;
         const TABLE_HEIGHT = 200;
         
-        // Dynamic spacing based on table count and complexity
-        const calculateSpacing = (tableCount: number, joinCount: number) => {
-          const baseHorizontal = 350;
-          const baseVertical = 250;
+        // Golden ratio and Fibonacci-based spacing for aesthetic appeal
+        const calculateOptimalSpacing = (tableCount: number, joinCount: number) => {
+          const goldenRatio = 1.618;
+          const baseTableWidth = TABLE_WIDTH;
           
-          // For more tables, increase spacing to prevent crowding
-          const horizontalMultiplier = Math.max(1.0, 1.0 + (tableCount - 3) * 0.1);
-          const verticalMultiplier = Math.max(1.0, 1.0 + (tableCount - 3) * 0.08);
+          // Primary spacing for connected tables (golden ratio)
+          const primarySpacing = Math.round(baseTableWidth * goldenRatio); // ~453px
           
-          // For complex join patterns, add extra spacing
+          // Secondary spacing for unconnected tables (fibonacci progression)
+          const secondarySpacing = Math.round(primarySpacing * goldenRatio); // ~733px
+          
+          // Adaptive spacing based on complexity
+          const complexityFactor = Math.max(1.0, 1.0 + (tableCount - 3) * 0.15);
           const joinComplexity = joinCount / Math.max(1, tableCount - 1);
-          const complexityBonus = joinComplexity > 0.8 ? 1.2 : 1.0;
+          
+          // For complex join patterns, increase spacing for readability
+          const joinBonus = joinComplexity > 0.8 ? 1.3 : 1.0;
           
           return {
-            horizontal: Math.round(baseHorizontal * horizontalMultiplier * complexityBonus),
-            vertical: Math.round(baseVertical * verticalMultiplier * complexityBonus)
+            horizontal: Math.round(primarySpacing * complexityFactor * joinBonus),
+            vertical: Math.round(primarySpacing * 0.6 * complexityFactor), // 60% of horizontal for vertical spacing
+            primary: primarySpacing,
+            secondary: secondarySpacing
           };
         };
         
-        const spacing = calculateSpacing(tables.length, joins.length);
+        const spacing = calculateOptimalSpacing(tables.length, joins.length);
         const HORIZONTAL_SPACING = spacing.horizontal;
         const VERTICAL_SPACING = spacing.vertical;
         
-        console.log(`📐 Dynamic spacing: H=${HORIZONTAL_SPACING}, V=${VERTICAL_SPACING} for ${tables.length} tables, ${joins.length} joins`);
+        console.log(`🎨 Aesthetic spacing: H=${HORIZONTAL_SPACING}, V=${VERTICAL_SPACING} for ${tables.length} tables, ${joins.length} joins`);
+        console.log(`📐 Golden ratio spacing: Primary=${spacing.primary}px, Secondary=${spacing.secondary}px`);
+        console.log(`🎯 Layout strategy: ${joins.length > 0 ? 'Join-aware with aesthetic spacing' : 'Grid with golden ratio spacing'}`);
         
         if (tables.length === 0) return positioned;
         
-        // If no joins, arrange in an optimized grid
+        // If no joins, arrange in an optimized grid with aesthetic spacing
         if (joins.length === 0) {
           const cols = Math.ceil(Math.sqrt(tables.length));
           const rows = Math.ceil(tables.length / cols);
           
-          // Center the grid on canvas
-          const totalWidth = (cols - 1) * HORIZONTAL_SPACING;
-          const totalHeight = (rows - 1) * VERTICAL_SPACING;
+          // Center the grid on canvas with golden ratio spacing
+          const totalWidth = (cols - 1) * spacing.primary;
+          const totalHeight = (rows - 1) * spacing.vertical;
           const startX = Math.max(100, (1200 - totalWidth) / 2);
           const startY = Math.max(100, (800 - totalHeight) / 2);
           
@@ -378,8 +419,8 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
             const row = Math.floor(index / cols);
             const col = index % cols;
             positioned.set(table.id || table.alias || table.name, {
-              x: startX + col * HORIZONTAL_SPACING,
-              y: startY + row * VERTICAL_SPACING
+              x: startX + col * spacing.primary,
+              y: startY + row * spacing.vertical
             });
           });
           return positioned;
@@ -394,16 +435,22 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
         });
         
         joins.forEach(j => {
-          connections.get(j.leftAlias)?.add(j.rightAlias);
-          connections.get(j.rightAlias)?.add(j.leftAlias);
+          // Handle both join formats: leftAlias/rightAlias and sourceTable/targetTable
+          const leftTable = j.leftAlias || j.sourceTable;
+          const rightTable = j.rightAlias || j.targetTable;
+          
+          if (leftTable && rightTable) {
+            connections.get(leftTable)?.add(rightTable);
+            connections.get(rightTable)?.add(leftTable);
+          }
         });
         
         // Find the best starting table (most connected or first in join chain)
         let startTable = tables[0];
         if (joins.length > 0) {
           // Try to find a table that's at the beginning of a join chain
-          const joinSources = new Set(joins.map(j => j.leftAlias));
-          const joinTargets = new Set(joins.map(j => j.rightAlias));
+          const joinSources = new Set(joins.map(j => j.leftAlias || j.sourceTable));
+          const joinTargets = new Set(joins.map(j => j.rightAlias || j.targetTable));
           
           // Look for tables that are sources but not targets (start of chain)
           const chainStarters = tables.filter(t => {
@@ -443,8 +490,10 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
         
         // Detect if this is a linear chain pattern (common for star schema or sequential joins)
         const isLinearChain = joins.every(j => {
-          const sourceConnections = connections.get(j.leftAlias)?.size || 0;
-          const targetConnections = connections.get(j.rightAlias)?.size || 0;
+          const leftTable = j.leftAlias || j.sourceTable;
+          const rightTable = j.rightAlias || j.targetTable;
+          const sourceConnections = connections.get(leftTable)?.size || 0;
+          const targetConnections = connections.get(rightTable)?.size || 0;
           return sourceConnections <= 2 && targetConnections <= 2;
         });
         
@@ -464,8 +513,8 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
             const level = current.level + 1;
             
             if (isLinearChain && level <= 4) {
-              // Linear chain: position horizontally for clarity with guaranteed spacing
-              x = current.parentX + HORIZONTAL_SPACING;
+              // Linear chain: position horizontally for clarity with golden ratio spacing
+              x = current.parentX + spacing.primary;
               
               // For linear chains, ensure each table gets a unique Y position
               // This prevents overlaps when multiple tables are at the same level
@@ -473,19 +522,19 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
                 // Single table: keep it aligned with parent
                 y = current.parentY;
               } else {
-                // Multiple tables: spread them vertically with guaranteed spacing
-                const verticalOffset = (index - (unvisitedConnected.length - 1) / 2) * (VERTICAL_SPACING * 0.6);
+                // Multiple tables: spread them vertically with aesthetic spacing
+                const verticalOffset = (index - (unvisitedConnected.length - 1) / 2) * (spacing.vertical * 0.6);
                 y = current.parentY + verticalOffset;
               }
             } else {
-              // Complex network: use radial spread
+              // Complex network: use radial spread with golden ratio
               const totalTables = unvisitedConnected.length;
               const baseAngle = current.angle || 0;
               const angleSpread = Math.min(Math.PI * 1.2, totalTables * 0.9);
               const startAngle = baseAngle - angleSpread / 2;
               const angle = totalTables === 1 ? baseAngle : startAngle + (index * angleSpread) / Math.max(1, totalTables - 1);
               
-              const radius = HORIZONTAL_SPACING * (1.0 + level * 0.3);
+              const radius = spacing.primary * (1.0 + level * 0.3);
               x = current.parentX + radius * Math.cos(angle);
               y = current.parentY + radius * Math.sin(angle);
             }
@@ -498,12 +547,12 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
             let finalX = x;
             let finalY = y;
             
-            // Check against all already positioned tables
+            // Check against all already positioned tables with aesthetic spacing
             positioned.forEach((existingPos, existingAlias) => {
               const dx = finalX - existingPos.x;
               const dy = finalY - existingPos.y;
               const distance = Math.sqrt(dx * dx + dy * dy);
-              const minRequiredDistance = 300; // Minimum distance between table centers
+              const minRequiredDistance = spacing.primary * 0.8; // Use golden ratio spacing for collision detection
               
               if (distance < minRequiredDistance && distance > 0) {
                 // Push this table away from the existing one
@@ -511,10 +560,10 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
                 
                 // Push in the direction that maintains the intended layout
                 if (isLinearChain) {
-                  // For linear chains, prefer horizontal separation
-                  finalX += dx > 0 ? pushFactor * 50 : -pushFactor * 50;
+                  // For linear chains, prefer horizontal separation with aesthetic spacing
+                  finalX += dx > 0 ? pushFactor * spacing.primary * 0.2 : -pushFactor * spacing.primary * 0.2;
                 } else {
-                  // For complex layouts, use both directions
+                  // For complex layouts, use both directions with golden ratio
                   finalX += dx * pushFactor * 0.3;
                   finalY += dy * pushFactor * 0.3;
                 }
@@ -626,6 +675,109 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
       // Debug: Log the smart positions to see what keys are being generated
       console.log('🔍 Smart positions generated:', Array.from(smartPositions.entries()));
       console.log('🔍 Parsed tables:', parsed.tables.map(t => ({ id: t.id, name: t.name })));
+      console.log('🔍 Parsed joins structure:', parsed.joins?.map(j => ({ 
+        id: j.id, 
+        sourceTable: j.sourceTable, 
+        targetTable: j.targetTable,
+        sourceColumn: j.sourceColumn,
+        targetColumn: j.targetColumn,
+        joinType: j.joinType 
+      })));
+      
+      // Enhanced position fallback logic to ensure all tables get positioned
+      const ensureTablePositions = (tables: ParsedTableRef[], smartPositions: Map<string, { x: number; y: number }>) => {
+        const fallbackPositions = new Map<string, { x: number; y: number }>();
+        const BASE_X = 200;
+        const BASE_Y = 200;
+        const FALLBACK_SPACING = 400;
+        
+        tables.forEach((table, index) => {
+          const tableKey = table.alias || table.name;
+          let position = smartPositions.get(tableKey);
+          
+          if (!position) {
+            // Generate fallback position in a grid pattern
+            const row = Math.floor(index / 3);
+            const col = index % 3;
+            position = {
+              x: BASE_X + col * FALLBACK_SPACING,
+              y: BASE_Y + row * FALLBACK_SPACING
+            };
+            console.log(`⚠️ No smart position for ${tableKey}, using fallback:`, position);
+          }
+          
+          fallbackPositions.set(tableKey, position);
+        });
+        
+        return fallbackPositions;
+      };
+      
+      const guaranteedPositions = ensureTablePositions(parsed.tables, smartPositions);
+      console.log('🔍 Guaranteed positions for all tables:', Array.from(guaranteedPositions.entries()));
+      
+      // CRITICAL FIX: Ensure every table gets a unique position with guaranteed spacing
+      const finalTablePositions = new Map<string, { x: number; y: number }>();
+      const MIN_SPACING = 400; // Minimum distance between table centers
+      
+      parsed.tables.forEach((table: ParsedTableRef, index) => {
+        const tableKey = table.alias || table.name;
+        let position = guaranteedPositions.get(tableKey) || smartPositions.get(tableKey);
+        
+        if (!position) {
+          // Force a position based on index with guaranteed spacing
+          const row = Math.floor(index / 2); // 2 columns for better spacing
+          const col = index % 2;
+          position = {
+            x: 200 + col * MIN_SPACING,
+            y: 200 + row * MIN_SPACING
+          };
+          console.log(`🚨 Force positioning ${tableKey} at:`, position);
+        }
+        
+        // Check for conflicts with already positioned tables
+        let finalPosition = { ...position };
+        let attempts = 0;
+        const maxAttempts = 10;
+        
+        while (attempts < maxAttempts) {
+          let hasConflict = false;
+          
+          finalTablePositions.forEach((existingPos) => {
+            const dx = finalPosition.x - existingPos.x;
+            const dy = finalPosition.y - existingPos.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance < MIN_SPACING) {
+              hasConflict = true;
+              // Push this table away in a systematic way
+              if (Math.abs(dx) > Math.abs(dy)) {
+                // Horizontal conflict - push right
+                finalPosition.x = existingPos.x + MIN_SPACING;
+              } else {
+                // Vertical conflict - push down
+                finalPosition.y = existingPos.y + MIN_SPACING;
+              }
+            }
+          });
+          
+          if (!hasConflict) break;
+          attempts++;
+          
+          // If we're still having conflicts, use a completely different area
+          if (attempts >= maxAttempts) {
+            finalPosition = {
+              x: 800 + (index * 100),
+              y: 100 + (index * 100)
+            };
+            console.log(`🚨 Emergency positioning ${tableKey} at:`, finalPosition);
+          }
+        }
+        
+        finalTablePositions.set(tableKey, finalPosition);
+        console.log(`✅ Final position for ${tableKey}:`, finalPosition);
+      });
+      
+      console.log('🎯 Final table positions:', Array.from(finalTablePositions.entries()));
       
       // Helper to generate clean aliases
       const generateCleanAlias = (tableName: string, existingAliases: Set<string>) => {
@@ -655,14 +807,30 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
       
       // First, try to fetch columns for all tables before adding them to canvas
       const tablesWithColumns = await Promise.all(
-        (parsed.tables || []).map(async (t, index) => {
-          // Keep the original alias from SQL to maintain join references
-          const originalAlias = t.id || t.name;
-          console.log(`📝 Preserving original alias: ${originalAlias} for table ${t.name}`);
-          
-          // Use the table ID (SQL alias) as the key for positioning
-          const position = existingPositions.get(t.name) || smartPositions.get(t.id) || { x: 120, y: 120 };
-          console.log(`📍 Position for table ${t.name} (ID: ${t.id}):`, position);
+        (parsed.tables || []).map(async (t: any, index) => {
+                  // Keep the original alias from SQL to maintain join references
+        // For TableNode objects from robust parser, use t.id as the alias
+        // For ParsedTableRef objects from legacy parser, use t.alias
+        const originalAlias = t.id || t.alias || t.name;
+        console.log(`📝 Preserving original alias: ${originalAlias} for table ${t.name}`);
+        
+        // Use the guaranteed final positions we just calculated with aesthetic spacing
+        const position = finalTablePositions.get(t.id) || 
+                        finalTablePositions.get(t.alias) || 
+                        finalTablePositions.get(t.name) || 
+                        finalTablePositions.get(originalAlias) ||
+                                // Fallback to aesthetic spacing if no position calculated
+        (() => {
+          const goldenRatio = 1.618;
+          const baseSpacing = 280 * goldenRatio; // ~453px
+          const aestheticX = 200 + (index * baseSpacing);
+          const aestheticY = 200 + (index * (baseSpacing * 0.4)); // Reduced vertical spacing
+          console.log(`🎨 Fallback aesthetic spacing for ${t.name}: (${aestheticX}, ${aestheticY})`);
+          return { x: aestheticX, y: aestheticY };
+        })();
+        
+        console.log(`📍 Final position for table ${t.name} (Alias: ${originalAlias}):`, position);
+        console.log(`📍 Position lookup: finalTablePositions.get(${t.id})=${!!finalTablePositions.get(t.id)}, finalTablePositions.get(${t.alias})=${!!finalTablePositions.get(t.alias)}, finalTablePositions.get(${t.name})=${!!finalTablePositions.get(t.name)}`);
           
           let actualTable = { catalog: t.catalog, schema: t.schema, name: t.name };
           
@@ -774,7 +942,7 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
       const importedTables = tablesWithColumns.map(t => ({ ...t, isImported: true }));
       
       console.log('🎯 Dispatching to state:');
-      console.log('📊 Tables with positions:', importedTables.map(t => ({ 
+      console.log('📊 Tables with positions BEFORE dispatch:', importedTables.map(t => ({ 
         id: t.id, 
         name: t.name, 
         position: t.position,
@@ -784,7 +952,28 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
       console.log('🔗 Joins:', joins.map(j => ({ id: j.id, sourceTable: j.sourceTable, targetTable: j.targetTable, sourceColumn: j.sourceColumn, targetColumn: j.targetColumn })));
       console.log('📝 Selected columns:', selectedColumns.length);
       
+      console.log('🚀 Dispatching SET_FROM_PARSED_SQL...');
       dispatch({ type: 'SET_FROM_PARSED_SQL', payload: { tables: importedTables, joins, selectedColumns } });
+      
+      // Force a re-render with aesthetic spacing after a short delay
+      setTimeout(() => {
+        console.log('🔄 Force refreshing table positions with aesthetic spacing...');
+        const refreshedTables = importedTables.map((table: any, index: number) => {
+          const goldenRatio = 1.618;
+          const baseSpacing = 280 * goldenRatio;
+          const aestheticX = 200 + (index * baseSpacing);
+          const aestheticY = 200 + (index * (baseSpacing * 0.4));
+          
+          console.log(`🎨 Force refresh aesthetic spacing for ${table.name}: (${aestheticX}, ${aestheticY})`);
+          
+          return {
+            ...table,
+            position: { x: aestheticX, y: aestheticY }
+          };
+        });
+        
+        dispatch({ type: 'SET_FROM_PARSED_SQL', payload: { tables: refreshedTables, joins, selectedColumns } });
+      }, 100);
       
       // Keep the original SQL instead of auto-generating new SQL
       // The SQL editor already has the correct imported SQL
