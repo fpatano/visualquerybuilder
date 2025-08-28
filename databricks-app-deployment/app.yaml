@@ -8,9 +8,17 @@ env:
   - name: 'LOG_LEVEL'
     value: 'info'
   - name: 'FEATURE_ALLOW_NO_DBRX'
-    value: '0'  # Changed to 0 to enforce proper environment
+    value: '0'
+  - name: 'DATABRICKS_APP_PORT'
+    value: '8000'
+  - name: 'DATABRICKS_WAREHOUSE_ID'
+    value: 'a274378bae39d2e1'
+  - name: 'DATABRICKS_SERVER_HOSTNAME'
+    value: 'dbc-fe7b006c-c783.cloud.databricks.com'
+  - name: 'DATABRICKS_HTTP_PATH'
+    value: '/sql/1.0/warehouses/a274378bae39d2e1'
 
-# Required permissions for Unity Catalog access
+# Required permissions for Unity Catalog access and SQL warehouse
 permissions:
   - permission: CAN_USE_CATALOG
   - permission: CAN_USE_SCHEMA
@@ -23,10 +31,9 @@ permissions:
 
 # App configuration
 config:
-  # Ensure the app runs in the proper Databricks Apps context
   runtime: nodejs18
-  # Set appropriate timeout for SQL queries
   timeout: 300s
-  # Enable proper authentication context
   auth:
     type: workspace
+    oauth_scopes:
+      - sql

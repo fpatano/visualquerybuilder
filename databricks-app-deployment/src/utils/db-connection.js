@@ -17,11 +17,8 @@ export async function createConnection(req) {
     const host = getDatabricksHost();
     const path = getDatabricksHttpPath();
     
-    const tokenSource = forwardedToken ? 'forwarded user token' : 'environment token';
-    console.log(`🔌 DB CONNECT → https://${host}${path}`);
-    console.log(`🔑 Token source: ${tokenSource}  |  Auth header present: ${!!userToken}`);
-    // For debug: log the first 10 characters so we can correlate requests without leaking the full token
-    console.log(`🔑 Token prefix: ${userToken?.substring(0, 10) || 'N/A'}…`);
+    console.log(`🔌 Creating connection to ${host}${path}`);
+    console.log(`🔑 Using ${forwardedToken ? 'forwarded user token' : 'environment token'} for authentication`);
     
     const client = new DBSQLClient();
     

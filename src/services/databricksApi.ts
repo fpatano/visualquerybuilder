@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { CatalogItem, QueryResult, DataProfile, ProfileMode } from '../types';
-import { checkDatabricksContext as checkContext, validateUnityCatalogAccess } from '../utils/databricks-context';
+// Context validation handled by backend
 
 const API_BASE = '/api/databricks';
 
@@ -10,20 +10,9 @@ axios.defaults.withCredentials = true; // Important for OAuth context
 axios.defaults.headers.common['Accept'] = 'application/json';
 axios.defaults.headers.common['Content-Type'] = 'application/json';
 
-// Check if running in Databricks Apps context
-function checkDatabricksContext(): boolean {
-  const context = checkContext();
-  if (context.isAvailable) {
-    console.log('✅ Databricks Apps context available');
-    return true;
-  } else {
-    console.warn('⚠️ Not running in Databricks Apps context');
-    console.warn('📋 Context details:', context);
-    return false;
-  }
-}
+// Backend will handle all authentication and context validation
 
-// Get warehouse ID from server config (no fallbacks)
+// Get warehouse ID from server config
 let warehouseId: string | null = null;
 
 export async function getWarehouseId(): Promise<string> {
@@ -35,14 +24,14 @@ export async function getWarehouseId(): Promise<string> {
     warehouseId = config.warehouseId;
     
     if (!warehouseId) {
-      throw new Error('No warehouse ID configured');
+      throw new Error('Warehouse ID not configured on server');
     }
     
     console.log('✅ Warehouse ID retrieved:', warehouseId);
     return warehouseId;
   } catch (error) {
     console.error('❌ Failed to get warehouse ID:', error);
-    throw new Error('Warehouse configuration not available');
+    throw new Error('Failed to retrieve warehouse configuration from server');
   }
 }
 
@@ -59,18 +48,10 @@ async function ensureWarehouseRunning(): Promise<boolean> {
 
 export async function fetchCatalogMetadata(): Promise<CatalogItem[]> {
   try {
-    console.log('Fetching catalogs from Databricks Unity Catalog...');
+    console.log('🚀 UPDATED CODE: Fetching catalogs from Databricks Unity Catalog...');
+    console.log('🔍 This should show if the updated code is deployed');
     
-    // Validate Databricks Apps context and Unity Catalog access
-    if (!checkDatabricksContext()) {
-      throw new Error('Not running in Databricks Apps context');
-    }
-    
-    if (!validateUnityCatalogAccess()) {
-      throw new Error('Insufficient permissions for Unity Catalog access');
-    }
-    
-    // Only fetch catalogs initially - load schemas/tables lazily
+    // Backend will handle authentication and context validation
     const catalogsResponse = await axios.get(`${API_BASE}/unity-catalog/catalogs`);
     console.log('Catalogs response:', catalogsResponse.data);
     
@@ -102,11 +83,6 @@ export async function fetchCatalogMetadata(): Promise<CatalogItem[]> {
 
 export async function fetchSchemas(catalogName: string): Promise<CatalogItem[]> {
   try {
-    // Validate context before making API calls
-    if (!checkDatabricksContext()) {
-      throw new Error('Not running in Databricks Apps context');
-    }
-    
     const schemasResponse = await axios.get(`${API_BASE}/unity-catalog/schemas?catalog_name=${catalogName}`);
     console.log(`Schemas for ${catalogName}:`, schemasResponse.data);
     
@@ -129,11 +105,6 @@ export async function fetchSchemas(catalogName: string): Promise<CatalogItem[]> 
 
 export async function fetchTables(catalogName: string, schemaName: string): Promise<CatalogItem[]> {
   try {
-    // Validate context before making API calls
-    if (!checkDatabricksContext()) {
-      throw new Error('Not running in Databricks Apps context');
-    }
-    
     const tablesResponse = await axios.get(`${API_BASE}/unity-catalog/tables?catalog_name=${catalogName}&schema_name=${schemaName}`);
     console.log(`Tables for ${catalogName}.${schemaName}:`, tablesResponse.data);
     
@@ -155,11 +126,6 @@ export async function fetchTables(catalogName: string, schemaName: string): Prom
 
 export async function fetchColumns(catalogName: string, schemaName: string, tableName: string): Promise<CatalogItem[]> {
   try {
-    // Validate context before making API calls
-    if (!checkDatabricksContext()) {
-      throw new Error('Not running in Databricks Apps context');
-    }
-    
     const columnsResponse = await axios.get(`${API_BASE}/unity-catalog/columns?catalog_name=${catalogName}&schema_name=${schemaName}&table_name=${tableName}`);
     console.log(`Columns for ${catalogName}.${schemaName}.${tableName}:`, columnsResponse.data);
     
@@ -182,11 +148,6 @@ export async function fetchColumns(catalogName: string, schemaName: string, tabl
 export async function executeDatabricksQuery(sql: string, opts?: { signal?: AbortSignal }): Promise<QueryResult> {
   try {
     console.log('Executing SQL query:', sql);
-    
-    // Validate context before making API calls
-    if (!checkDatabricksContext()) {
-      throw new Error('Not running in Databricks Apps context');
-    }
     
     const startTime = Date.now();
     
@@ -321,9 +282,8 @@ export async function getTableProfile(catalog: string, schema: string, table: st
     
     // Minimal metrics only: just row count
     try {
-      const catalogColumns = await axios.get(`${API_BASE}/unity-catalog/tables/${catalog}.${schema}.${table}`);
-      const columns = catalogColumns.data.columns || [];
-      columnCount = columns.length;
+      const columnsData = await fetchColumns(catalog, schema, table);
+      columnCount = columnsData.length;
     } catch {}
     let totalRows = 0;
     try {

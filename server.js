@@ -24,11 +24,21 @@ function validateEnv() {
     throw new Error(`Missing required env vars: ${missing.join(', ')}`);
   }
   
+  // Log environment variables for debugging
+  console.log('🔍 Environment Variables:');
+  console.log(`  - NODE_ENV: ${process.env.NODE_ENV}`);
+  console.log(`  - DATABRICKS_SERVER_HOSTNAME: ${process.env.DATABRICKS_SERVER_HOSTNAME || 'NOT SET'}`);
+  console.log(`  - DATABRICKS_WAREHOUSE_ID: ${process.env.DATABRICKS_WAREHOUSE_ID || 'NOT SET'}`);
+  console.log(`  - DATABRICKS_APP_PORT: ${process.env.DATABRICKS_APP_PORT || 'NOT SET'}`);
+  console.log(`  - DATABRICKS_HTTP_PATH: ${process.env.DATABRICKS_HTTP_PATH || 'NOT SET'}`);
+  
   // Validate authentication environment
   try {
     validateAuthEnvironment();
   } catch (error) {
     if (process.env.FEATURE_ALLOW_NO_DBRX !== '1') {
+      console.error(`❌ Authentication environment validation failed: ${error.message}`);
+      console.error('❌ This will cause API calls to fail. Check your app.yaml configuration.');
       throw error;
     }
     console.warn(`Warning: Authentication environment validation failed: ${error.message}. Set FEATURE_ALLOW_NO_DBRX=1 to skip.`);
@@ -39,7 +49,7 @@ function validateEnv() {
 validateEnv();
 
 const app = express();
-const PORT = process.env.PORT || process.env.DATABRICKS_APP_PORT || 3000;
+const PORT = process.env.DATABRICKS_APP_PORT || process.env.PORT || 3000;
 const APP_BASE_PATH = process.env.APP_BASE_PATH || '/';
 const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 
@@ -220,6 +230,21 @@ router.get('/api/debug/env', (req, res) => {
   res.json(envInfo);
 });
 
+// Simple test endpoint
+router.get('/api/test', (req, res) => {
+  res.json({
+    message: 'Server is working',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV,
+    isDatabricksApps: isDatabricksApps(),
+    requestHeaders: Object.keys(req.headers),
+    requestIsDatabricksApps: req.isDatabricksApps,
+    databricksHost: getDatabricksHost(),
+    serverHostname: process.env.DATABRICKS_SERVER_HOSTNAME,
+    warehouseId: process.env.DATABRICKS_WAREHOUSE_ID
+  });
+});
+
 // New endpoint to demonstrate user-specific database operations
 router.post('/api/query', async (req, res) => {
   try {
@@ -355,24 +380,66 @@ router.post('/api/databricks/2.0/sql/statements', async (req, res) => {
 
 // API proxy for other Databricks calls (Unity Catalog, etc.)
 router.use('/api/databricks', createProxyMiddleware({
-  target: getDatabricksHost() || 'https://dbc-00000000-0000.cloud.databricks.com',
+  target: `https://${getDatabricksHost() || process.env.DATABRICKS_SERVER_HOSTNAME}`,
   changeOrigin: true,
+  secure: true,
   timeout: 120000, // 2 minutes for SQL queries
   proxyTimeout: 120000, // 2 minutes for proxy itself
   pathRewrite: {
     '^/api/databricks/2.0': '/api/2.0',
     '^/api/databricks/2.1': '/api/2.1',
+    '^/api/databricks/unity-catalog': '/api/2.1/unity-catalog',
     '^/api/databricks': '/api/2.1'
   },
   onProxyReq: (proxyReq, req, res) => {
     try {
-      // Set user-specific authorization header
-      const userToken = getUserToken(req);
-      proxyReq.setHeader('Authorization', `Bearer ${userToken}`);
-      console.log(`[PROXY] ${req.method} ${req.path} -> ${proxyReq.path} (user authenticated)`);
+      const targetHost = getDatabricksHost() || process.env.DATABRICKS_SERVER_HOSTNAME;
+      // Build full target URL for easier debug output
+      const resolvedTarget = `https://${targetHost}`;
+
+      // Read user token forwarded by Databricks Apps
+      const forwardedToken = req.header('x-forwarded-access-token');
+      const authHeaderPresent = !!forwardedToken;
+
+      // REQUIRED: We must have the forwarded token for every upstream request when running as an App
+      if (!authHeaderPresent) {
+        console.error(`[PROXY] Missing x-forwarded-access-token for request ${req.method} ${req.path}`);
+        if (!res.headersSent) {
+          return res.status(401).json({
+            ok: false,
+            error: 'FORWARDED_TOKEN_MISSING',
+            message: 'Databricks Apps did not forward a user access token. Ensure the app is installed and the \"sql\" scope is enabled.'
+          });
+        }
+        return;
+      }
+
+      // Inject Authorization header for Databricks API
+      proxyReq.setHeader('Authorization', `Bearer ${forwardedToken}`);
+
+      // Verification logging (one line per upstream call)
+      console.log(`[PROXY VERIFY] → ${resolvedTarget}  |  Auth header present: ${authHeaderPresent}`);
+
+      // Forward possible organisation header for completeness
+      const orgId = req.header('x-databricks-org-id');
+      if (orgId) {
+        proxyReq.setHeader('x-databricks-org-id', orgId);
+      }
     } catch (error) {
       console.error(`[PROXY] Authentication failed for ${req.path}:`, error.message);
-      res.status(401).json({ error: 'Authentication failed', message: error.message });
+      
+      // Return a proper error response instead of letting the proxy crash
+      if (!res.headersSent) {
+        res.status(401).json({ 
+          error: 'Authentication failed', 
+          message: error.message,
+          details: {
+            hasForwardedToken: !!req.header('x-forwarded-access-token'),
+            requestHeaders: Object.keys(req.headers),
+            environment: process.env.NODE_ENV
+          }
+        });
+      }
       return;
     }
   },
@@ -384,8 +451,17 @@ router.use('/api/databricks', createProxyMiddleware({
   },
   onError: (err, req, res) => {
     console.error(`[PROXY] Error for ${req.path}:`, err.message);
+    console.error(`[PROXY] Error stack:`, err.stack);
     if (!res.headersSent) {
-      res.status(500).json({ error: 'Proxy error', message: err.message });
+      res.status(500).json({ 
+        error: 'Proxy error', 
+        message: err.message,
+        details: {
+          isDatabricksApps: isDatabricksApps(),
+          requestHeaders: Object.keys(req.headers),
+          environment: process.env.NODE_ENV
+        }
+      });
     }
   }
 }));

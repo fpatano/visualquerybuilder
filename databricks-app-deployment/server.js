@@ -24,11 +24,21 @@ function validateEnv() {
     throw new Error(`Missing required env vars: ${missing.join(', ')}`);
   }
   
+  // Log environment variables for debugging
+  console.log('🔍 Environment Variables:');
+  console.log(`  - NODE_ENV: ${process.env.NODE_ENV}`);
+  console.log(`  - DATABRICKS_SERVER_HOSTNAME: ${process.env.DATABRICKS_SERVER_HOSTNAME || 'NOT SET'}`);
+  console.log(`  - DATABRICKS_WAREHOUSE_ID: ${process.env.DATABRICKS_WAREHOUSE_ID || 'NOT SET'}`);
+  console.log(`  - DATABRICKS_APP_PORT: ${process.env.DATABRICKS_APP_PORT || 'NOT SET'}`);
+  console.log(`  - DATABRICKS_HTTP_PATH: ${process.env.DATABRICKS_HTTP_PATH || 'NOT SET'}`);
+  
   // Validate authentication environment
   try {
     validateAuthEnvironment();
   } catch (error) {
     if (process.env.FEATURE_ALLOW_NO_DBRX !== '1') {
+      console.error(`❌ Authentication environment validation failed: ${error.message}`);
+      console.error('❌ This will cause API calls to fail. Check your app.yaml configuration.');
       throw error;
     }
     console.warn(`Warning: Authentication environment validation failed: ${error.message}. Set FEATURE_ALLOW_NO_DBRX=1 to skip.`);
@@ -39,7 +49,7 @@ function validateEnv() {
 validateEnv();
 
 const app = express();
-const PORT = process.env.PORT || process.env.DATABRICKS_APP_PORT || 3000;
+const PORT = process.env.DATABRICKS_APP_PORT || process.env.PORT || 3000;
 const APP_BASE_PATH = process.env.APP_BASE_PATH || '/';
 const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 
@@ -80,6 +90,24 @@ app.use(helmet({
 
 // Request logging
 app.use(logger);
+
+// Databricks Apps detection middleware
+app.use((req, res, next) => {
+  // Check for Databricks Apps headers
+  const hasForwardedToken = !!req.header('x-forwarded-access-token');
+  const hasForwardedEmail = !!req.header('x-forwarded-email');
+  const hasDatabricksHeaders = hasForwardedToken || hasForwardedEmail;
+  
+  console.log('🔍 Request Headers Analysis:');
+  console.log(`  - x-forwarded-access-token: ${hasForwardedToken ? '✅ present' : '❌ missing'}`);
+  console.log(`  - x-forwarded-email: ${hasForwardedEmail ? '✅ present' : '❌ missing'}`);
+  console.log(`  - Databricks Apps headers: ${hasDatabricksHeaders ? '✅ detected' : '❌ not detected'}`);
+  
+  // Set environment context for this request
+  req.isDatabricksApps = hasDatabricksHeaders;
+  
+  next();
+});
 
 // Body parsing
 app.use(express.json());
@@ -179,6 +207,41 @@ router.get('/api/config', (req, res) => {
     host: getDatabricksHost(),
     basePath: APP_BASE_PATH,
     environment: isDatabricksApps() ? 'Databricks Apps' : 'Local Development'
+  });
+});
+
+// Debug endpoint to show all environment variables (for troubleshooting)
+router.get('/api/debug/env', (req, res) => {
+  const envInfo = {
+    NODE_ENV: process.env.NODE_ENV,
+    PORT: process.env.PORT,
+    DATABRICKS_SERVER_HOSTNAME: process.env.DATABRICKS_SERVER_HOSTNAME,
+    DATABRICKS_WAREHOUSE_ID: process.env.DATABRICKS_WAREHOUSE_ID,
+    DATABRICKS_APP_PORT: process.env.DATABRICKS_APP_PORT,
+    APP_BASE_PATH: process.env.APP_BASE_PATH,
+    DATABRICKS_HOST: process.env.DATABRICKS_HOST,
+    isDatabricksApps: isDatabricksApps(),
+    requestHeaders: req.headers,
+    requestIsDatabricksApps: req.isDatabricksApps,
+    timestamp: new Date().toISOString()
+  };
+  
+  console.log('🔍 Environment Debug Info:', envInfo);
+  res.json(envInfo);
+});
+
+// Simple test endpoint
+router.get('/api/test', (req, res) => {
+  res.json({
+    message: 'Server is working',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV,
+    isDatabricksApps: isDatabricksApps(),
+    requestHeaders: Object.keys(req.headers),
+    requestIsDatabricksApps: req.isDatabricksApps,
+    databricksHost: getDatabricksHost(),
+    serverHostname: process.env.DATABRICKS_SERVER_HOSTNAME,
+    warehouseId: process.env.DATABRICKS_WAREHOUSE_ID
   });
 });
 
@@ -317,24 +380,57 @@ router.post('/api/databricks/2.0/sql/statements', async (req, res) => {
 
 // API proxy for other Databricks calls (Unity Catalog, etc.)
 router.use('/api/databricks', createProxyMiddleware({
-  target: getDatabricksHost() || 'https://dbc-00000000-0000.cloud.databricks.com',
+  target: `https://${getDatabricksHost() || process.env.DATABRICKS_SERVER_HOSTNAME}`,
   changeOrigin: true,
+  secure: true,
   timeout: 120000, // 2 minutes for SQL queries
   proxyTimeout: 120000, // 2 minutes for proxy itself
   pathRewrite: {
     '^/api/databricks/2.0': '/api/2.0',
     '^/api/databricks/2.1': '/api/2.1',
+    '^/api/databricks/unity-catalog': '/api/2.1/unity-catalog',
     '^/api/databricks': '/api/2.1'
   },
   onProxyReq: (proxyReq, req, res) => {
     try {
-      // Set user-specific authorization header
-      const userToken = getUserToken(req);
-      proxyReq.setHeader('Authorization', `Bearer ${userToken}`);
-      console.log(`[PROXY] ${req.method} ${req.path} -> ${proxyReq.path} (user authenticated)`);
+      const targetHost = getDatabricksHost() || process.env.DATABRICKS_SERVER_HOSTNAME;
+      console.log(`[PROXY] Processing request: ${req.method} ${req.path} -> https://${targetHost}`);
+      
+      // For Databricks Apps: inject Bearer token from x-forwarded-access-token
+      const forwardedToken = req.header('x-forwarded-access-token');
+      if (forwardedToken) {
+        proxyReq.setHeader('Authorization', `Bearer ${forwardedToken}`);
+        console.log(`[PROXY] Using x-forwarded-access-token for authorization (length: ${forwardedToken.length})`);
+      } else {
+        // Fallback for local development
+        const userToken = getUserToken(req);
+        proxyReq.setHeader('Authorization', `Bearer ${userToken}`);
+        console.log(`[PROXY] Using fallback token for authorization`);
+      }
+      
+      // Forward x-databricks-org-id if present
+      const orgId = req.header('x-databricks-org-id');
+      if (orgId) {
+        proxyReq.setHeader('x-databricks-org-id', orgId);
+        console.log(`[PROXY] Forwarding org ID: ${orgId}`);
+      }
+      
+      console.log(`[PROXY] ${req.method} ${req.path} -> ${proxyReq.path} (target: https://${targetHost})`);
     } catch (error) {
       console.error(`[PROXY] Authentication failed for ${req.path}:`, error.message);
-      res.status(401).json({ error: 'Authentication failed', message: error.message });
+      
+      // Return a proper error response instead of letting the proxy crash
+      if (!res.headersSent) {
+        res.status(401).json({ 
+          error: 'Authentication failed', 
+          message: error.message,
+          details: {
+            hasForwardedToken: !!req.header('x-forwarded-access-token'),
+            requestHeaders: Object.keys(req.headers),
+            environment: process.env.NODE_ENV
+          }
+        });
+      }
       return;
     }
   },
@@ -346,8 +442,17 @@ router.use('/api/databricks', createProxyMiddleware({
   },
   onError: (err, req, res) => {
     console.error(`[PROXY] Error for ${req.path}:`, err.message);
+    console.error(`[PROXY] Error stack:`, err.stack);
     if (!res.headersSent) {
-      res.status(500).json({ error: 'Proxy error', message: err.message });
+      res.status(500).json({ 
+        error: 'Proxy error', 
+        message: err.message,
+        details: {
+          isDatabricksApps: isDatabricksApps(),
+          requestHeaders: Object.keys(req.headers),
+          environment: process.env.NODE_ENV
+        }
+      });
     }
   }
 }));
