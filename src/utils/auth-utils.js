@@ -108,6 +108,24 @@ export function getDatabricksHost() {
 }
 
 /**
+ * Get dynamic Databricks host from request headers (for Databricks Apps)
+ */
+export function getDynamicDatabricksHost(req) {
+  // In Databricks Apps, build host from forwarded headers
+  if (req && req.headers) {
+    const host = req.headers['x-forwarded-host'];
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    
+    if (host) {
+      return `${proto}://${host}`;
+    }
+  }
+  
+  // Fallback to static configuration
+  return getDatabricksHost();
+}
+
+/**
  * Get appropriate HTTP path for the environment
  * Always derives from DATABRICKS_WAREHOUSE_ID if DATABRICKS_HTTP_PATH is not set
  */

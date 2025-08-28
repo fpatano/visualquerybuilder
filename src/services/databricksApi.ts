@@ -31,7 +31,7 @@ export async function getWarehouseId(): Promise<string> {
     return warehouseId;
   } catch (error) {
     console.error('❌ Failed to get warehouse ID:', error);
-    throw new Error('Failed to retrieve warehouse configuration from server');
+    throw new Error('Failed to retrieve warehouse configuration from server. Please ensure the app is properly configured with a warehouse ID.');
   }
 }
 

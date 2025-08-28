@@ -29,16 +29,27 @@ A modern, visual interface for building SQL queries with seamless Unity Catalog 
    npm run build
    ```
 
-4. **Deploy to Databricks Apps**
-   ```bash
-   # Option 1: Use the updated deployment script
-   ./scripts/deploy-databricks-app.sh
-   
-   # Option 2: Deploy manually with CLI
-   npm run build
-   /usr/local/bin/databricks apps deploy visual-query-builder \
-     --source-code-path /Workspace/Users/fpatano@gmail.com/visual-query-builder
-   ```
+### Deployment Strategy
+
+**🚀 For Quick Testing & Development:**
+```bash
+# Quick deployment to Databricks for testing
+npm run deploy:test
+# or
+./deploy-new.sh
+```
+**Purpose**: Deploy current code to Databricks for testing and development feedback
+**Features**: Fast build, deploy to Databricks, quick iteration
+
+**🚀 For Production Releases:**
+```bash
+# Production deployment with full validation
+npm run deploy:production
+# or
+./scripts/deploy-databricks-app.sh
+```
+**Purpose**: Production deployments with comprehensive validation and verification
+**Features**: Full validation, comprehensive error checking, deployment verification
 
 5. **Launch from Databricks Workspace**
    - Go to your Databricks workspace

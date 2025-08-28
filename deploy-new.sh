@@ -1,11 +1,16 @@
 #!/bin/bash
 
-# Simple Databricks Apps Deployment Script
-# Uses the new CLI with apps support
+# Quick Deployment Script for Databricks Apps
+# This script deploys the current code to Databricks for testing and development
+# For production releases with full validation, use: scripts/deploy-databricks-app.sh
 
 set -e
 
-echo "🚀 Deploying Visual SQL Query Builder to Databricks Apps..."
+echo "🚀 Quick Deployment - Visual SQL Query Builder to Databricks Apps..."
+echo "===================================================================="
+echo "📝 This deploys current code to Databricks for testing/development"
+echo "🚀 For production releases, use: scripts/deploy-databricks-app.sh"
+echo ""
 
 # Check if new CLI is available
 if ! command -v /usr/local/bin/databricks &> /dev/null; then

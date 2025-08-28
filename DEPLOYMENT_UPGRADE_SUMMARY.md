@@ -26,10 +26,11 @@ The deployment documentation has been completely updated to reflect the new Data
 - ✅ **Added**: App update instructions
 - ✅ **Updated**: Deployment verification steps
 
-### 4. **New Simple Deployment Script** (`deploy-new.sh`)
-- ✅ **Created**: Simple, focused deployment script
-- ✅ **Added**: CLI availability checking
-- ✅ **Added**: Build + deploy in one script
+### 4. **Updated Quick Deployment Script** (`deploy-new.sh`)
+- ✅ **Updated**: Now clearly marked as **Quick Deployment Script**
+- ✅ **Added**: Clarification that it deploys to Databricks for testing
+- ✅ **Added**: Reference to production script
+- ✅ **Added**: Build + deploy to Databricks in one script
 - ✅ **Added**: Clear next steps and status checking
 
 ### 5. **Updated Package.json Scripts**
@@ -37,29 +38,25 @@ The deployment documentation has been completely updated to reflect the new Data
 - ✅ **Added**: `npm run deploy:cli` - direct CLI deployment
 - ✅ **Updated**: Post-build message to use new deployment method
 
-## 🚀 **New Deployment Methods Available**
+## 🚀 **New Deployment Strategy**
 
-### **Option 1: Simple Script (Recommended)**
+### **🚀 Quick Testing & Development Deployments**
 ```bash
-npm run deploy:new
+npm run deploy:test
+# or
+./deploy-new.sh
 ```
+**Purpose**: Deploy current code to Databricks for testing and development feedback
+**Features**: Fast build, deploy to Databricks, quick iteration
 
-### **Option 2: Direct CLI**
+### **🚀 Production Releases**
 ```bash
-npm run deploy:cli
+npm run deploy:production
+# or
+./scripts/deploy-databricks-app.sh
 ```
-
-### **Option 3: Full Script with Validation**
-```bash
-npm run deploy:apps
-```
-
-### **Option 4: Manual Step-by-Step**
-```bash
-npm run build
-/usr/local/bin/databricks apps deploy visual-query-builder \
-  --source-code-path /Workspace/Users/fpatano@gmail.com/visual-query-builder
-```
+**Purpose**: Production deployments with comprehensive validation and verification
+**Features**: Full validation, comprehensive error checking, deployment verification
 
 ## 🔧 **What the New CLI Enables**
 

@@ -1,106 +1,88 @@
 #!/usr/bin/env node
 
 /**
- * Test script for the Visual SQL Query Builder authentication system
- * Tests both local development and Databricks Apps scenarios
+ * Test script to verify authentication is working properly
+ * This script tests both local development and Databricks Apps scenarios
  */
 
-import { getUserToken, isDatabricksApps, getDatabricksHost, validateAuthEnvironment, logAuthEnvironment } from '../src/utils/auth-utils.js';
-import { testConnection, getConnectionInfo } from '../src/utils/db-connection.js';
+import axios from 'axios';
+import dotenv from 'dotenv';
 
-// Mock request object for testing
-const mockReq = {
-  header: (name) => {
-    if (name === 'x-forwarded-access-token') {
-      return process.env.TEST_FORWARDED_TOKEN || 'test-forwarded-token';
-    }
-    return null;
-  }
-};
+// Load environment variables
+dotenv.config();
 
-async function runAuthTests() {
-  console.log('🧪 Testing Visual SQL Query Builder Authentication System\n');
-  
+const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3000';
+
+async function testAuthentication() {
+  console.log('🧪 Testing Authentication Flow');
+  console.log('================================');
+  console.log(`Base URL: ${BASE_URL}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log('');
+
   try {
-    // Test 1: Environment detection
-    console.log('1️⃣ Testing Environment Detection...');
-    const isApps = isDatabricksApps();
-    console.log(`   Environment: ${isApps ? 'Databricks Apps' : 'Local Development'}`);
-    console.log(`   Host: ${getDatabricksHost()}`);
-    console.log(`   Warehouse ID: ${process.env.DATABRICKS_WAREHOUSE_ID || 'Not set'}`);
-    console.log('   ✅ Environment detection working\n');
-    
-    // Test 2: Environment validation
-    console.log('2️⃣ Testing Environment Validation...');
+    // Test 1: Health endpoint
+    console.log('1️⃣ Testing health endpoint...');
+    const healthResponse = await axios.get(`${BASE_URL}/health`);
+    console.log('✅ Health check passed:', healthResponse.data);
+    console.log('');
+
+    // Test 2: Configuration endpoint
+    console.log('2️⃣ Testing configuration endpoint...');
+    const configResponse = await axios.get(`${BASE_URL}/api/config`);
+    console.log('✅ Configuration retrieved:', configResponse.data);
+    console.log('');
+
+    // Test 3: Whoami endpoint (will fail without proper auth)
+    console.log('3️⃣ Testing whoami endpoint...');
     try {
-      validateAuthEnvironment();
-      console.log('   ✅ Environment validation passed\n');
+      const whoamiResponse = await axios.get(`${BASE_URL}/api/whoami`);
+      console.log('✅ Whoami check passed:', whoamiResponse.data);
     } catch (error) {
-      console.log(`   ⚠️  Environment validation failed: ${error.message}\n`);
-    }
-    
-    // Test 3: Token extraction
-    console.log('3️⃣ Testing Token Extraction...');
-    try {
-      const token = getUserToken(mockReq);
-      console.log(`   ✅ Token extracted successfully (${token.substring(0, 10)}...)`);
-      console.log(`   Token source: ${isApps ? 'x-forwarded-access-token header' : 'DATABRICKS_TOKEN env var'}\n`);
-    } catch (error) {
-      console.log(`   ❌ Token extraction failed: ${error.message}\n`);
-    }
-    
-    // Test 4: Connection info
-    console.log('4️⃣ Testing Connection Info...');
-    try {
-      const connInfo = getConnectionInfo();
-      console.log(`   Host: ${connInfo.host}`);
-      console.log(`   Path: ${connInfo.path}`);
-      console.log(`   Warehouse: ${connInfo.warehouseId}`);
-      console.log(`   Environment: ${connInfo.environment}`);
-      console.log('   ✅ Connection info retrieved\n');
-    } catch (error) {
-      console.log(`   ❌ Connection info failed: ${error.message}\n`);
-    }
-    
-    // Test 5: Database connectivity (if environment allows)
-    if (process.env.DATABRICKS_TOKEN || process.env.TEST_FORWARDED_TOKEN) {
-      console.log('5️⃣ Testing Database Connectivity...');
-      try {
-        const result = await testConnection(mockReq);
-        if (result.success) {
-          console.log('   ✅ Database connection test successful');
-          console.log(`   Result: ${JSON.stringify(result.result)}`);
-        } else {
-          console.log(`   ❌ Database connection test failed: ${result.error}`);
-        }
-        console.log('');
-      } catch (error) {
-        console.log(`   ❌ Database connection test error: ${error.message}\n`);
+      if (error.response?.status === 401) {
+        console.log('⚠️  Whoami check failed (expected without auth):', error.response.data);
+      } else {
+        console.log('❌ Whoami check failed unexpectedly:', error.message);
       }
-    } else {
-      console.log('5️⃣ Skipping Database Connectivity Test (no token available)\n');
     }
-    
-    // Test 6: Authentication logging
-    console.log('6️⃣ Testing Authentication Logging...');
+    console.log('');
+
+    // Test 4: Test endpoint
+    console.log('4️⃣ Testing test endpoint...');
+    const testResponse = await axios.get(`${BASE_URL}/api/test`);
+    console.log('✅ Test endpoint passed:', testResponse.data);
+    console.log('');
+
+    // Test 5: Unity Catalog test (will fail without proper auth)
+    console.log('5️⃣ Testing Unity Catalog endpoint...');
     try {
-      logAuthEnvironment();
-      console.log('   ✅ Authentication logging working\n');
+      const ucResponse = await axios.get(`${BASE_URL}/api/test/unity-catalog`);
+      console.log('✅ Unity Catalog test passed:', ucResponse.data);
     } catch (error) {
-      console.log(`   ❌ Authentication logging failed: ${error.message}\n`);
+      if (error.response?.status === 401) {
+        console.log('⚠️  Unity Catalog test failed (expected without auth):', error.response.data);
+      } else {
+        console.log('❌ Unity Catalog test failed unexpectedly:', error.message);
+      }
     }
-    
-    console.log('🎉 Authentication system test completed!');
-    
+    console.log('');
+
+    console.log('🎉 All basic tests completed!');
+    console.log('');
+    console.log('📋 Next steps:');
+    console.log('   - If running locally: Set DATABRICKS_TOKEN environment variable');
+    console.log('   - If running in Databricks Apps: Ensure app is installed with "sql" scope');
+    console.log('   - Check logs for detailed authentication information');
+
   } catch (error) {
-    console.error('💥 Test suite failed:', error.message);
+    console.error('❌ Test failed:', error.message);
+    if (error.response) {
+      console.error('Response status:', error.response.status);
+      console.error('Response data:', error.response.data);
+    }
     process.exit(1);
   }
 }
 
-// Run tests if this script is executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  runAuthTests();
-}
-
-export { runAuthTests };
+// Run the test
+testAuthentication().catch(console.error);

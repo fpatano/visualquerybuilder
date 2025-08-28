@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Databricks Apps Deployment Script
-# This script deploys the Visual SQL Query Builder as a Databricks App
-# Requires Databricks CLI v0.200+ with apps support
+# Production Deployment Script for Databricks Apps
+# This script is for production releases with full validation and verification
+# For quick testing, use: deploy-new.sh
 
 set -e
 
@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 # Configuration
 APP_NAME="visual-query-builder"
 APP_DISPLAY_NAME="Visual SQL Query Builder"
-WORKSPACE_PATH="/Workspace/Users/fpatano@gmail.com/visual-query-builder"
+WORKSPACE_PATH="/Workspace/Users/6bde2ca2-5ad5-47bb-8284-db7289e1c333/visual-query-builder"
 CLI_PATH="/usr/local/bin/databricks"
 
 echo -e "${BLUE}🚀 Databricks Apps Deployment Script${NC}"
