@@ -6,6 +6,8 @@ import dotenv from 'dotenv';
 import helmet from 'helmet';
 import pinoHttp from 'pino-http';
 import axios from 'axios';
+import { getUserToken, isDatabricksApps, getDatabricksHost, validateAuthEnvironment, logAuthEnvironment } from './src/utils/auth-utils.js';
+import { createConnection, executeQuery, testConnection, getConnectionInfo } from './src/utils/db-connection.js';
 
 // Load environment variables
 dotenv.config();
@@ -16,19 +18,20 @@ const __dirname = path.dirname(__filename);
 // Environment validation
 function validateEnv() {
   const REQUIRED = ['NODE_ENV'];
-  const DATABRICKS_REQUIRED = ['DATABRICKS_HOST', 'DATABRICKS_TOKEN'];
   
   const missing = REQUIRED.filter(k => !process.env[k]);
   if (missing.length) {
     throw new Error(`Missing required env vars: ${missing.join(', ')}`);
   }
   
-  // Check Databricks env if not explicitly skipped
-  if (process.env.FEATURE_ALLOW_NO_DBRX !== '1') {
-    const missingDatabricks = DATABRICKS_REQUIRED.filter(k => !process.env[k]);
-    if (missingDatabricks.length) {
-      console.warn(`Warning: Missing Databricks env vars: ${missingDatabricks.join(', ')}. Set FEATURE_ALLOW_NO_DBRX=1 to skip.`);
+  // Validate authentication environment
+  try {
+    validateAuthEnvironment();
+  } catch (error) {
+    if (process.env.FEATURE_ALLOW_NO_DBRX !== '1') {
+      throw error;
     }
+    console.warn(`Warning: Authentication environment validation failed: ${error.message}. Set FEATURE_ALLOW_NO_DBRX=1 to skip.`);
   }
 }
 
@@ -113,19 +116,22 @@ router.get('/ready', async (req, res) => {
   }
   
   try {
-    // Check Databricks connectivity if configured
-    if (process.env.DATABRICKS_HOST && process.env.DATABRICKS_TOKEN) {
-      const client = axios.create({
-        baseURL: `${process.env.DATABRICKS_HOST}/api`,
-        headers: { Authorization: `Bearer ${process.env.DATABRICKS_TOKEN}` },
-        timeout: 5000,
-      });
-      
-      // Simple connectivity check
-      await client.get('/2.0/clusters/list');
-    }
+    // Test database connectivity using user authentication
+    const connectionTest = await testConnection(req);
     
-    return res.json({ ready: true, timestamp: new Date().toISOString() });
+    if (connectionTest.success) {
+      return res.json({ 
+        ready: true, 
+        timestamp: new Date().toISOString(),
+        database: 'connected'
+      });
+    } else {
+      return res.status(503).json({ 
+        ready: false, 
+        error: connectionTest.error,
+        timestamp: new Date().toISOString()
+      });
+    }
   } catch (e) {
     console.error('Readiness check failed:', e.message);
     return res.status(503).json({ 
@@ -136,27 +142,30 @@ router.get('/ready', async (req, res) => {
   }
 });
 
-// Databricks whoami endpoint for smoke testing
+// User authentication info endpoint
 router.get('/api/whoami', async (req, res) => {
   try {
-    if (!process.env.DATABRICKS_HOST || !process.env.DATABRICKS_TOKEN) {
-      if (process.env.FEATURE_ALLOW_NO_DBRX === '1') {
-        return res.status(200).json({ ok: true, skipped: true, message: 'Databricks client not configured' });
-      }
-      return res.status(500).json({ ok: false, error: 'DATABRICKS_HOST and DATABRICKS_TOKEN are required' });
-    }
+    // Get user token (this will throw if not available)
+    const userToken = getUserToken(req);
     
-    const client = axios.create({
-      baseURL: `${process.env.DATABRICKS_HOST}/api`,
-      headers: { Authorization: `Bearer ${process.env.DATABRICKS_TOKEN}` },
-      timeout: 15000,
+    // Get connection info for debugging
+    const connectionInfo = getConnectionInfo();
+    
+    res.json({ 
+      ok: true, 
+      authenticated: true,
+      environment: connectionInfo.environment,
+      host: connectionInfo.host,
+      warehouseId: connectionInfo.warehouseId,
+      tokenSource: isDatabricksApps() ? 'x-forwarded-access-token' : 'DATABRICKS_TOKEN env var'
     });
-    
-    const response = await client.get('/2.0/preview/scim/v2/Me');
-    res.json({ ok: true, me: response.data });
   } catch (e) {
-    console.error('Databricks whoami failed:', e.message);
-    res.status(500).json({ ok: false, error: e.message });
+    console.error('Authentication check failed:', e.message);
+    res.status(401).json({ 
+      ok: false, 
+      authenticated: false,
+      error: e.message 
+    });
   }
 });
 
@@ -164,24 +173,55 @@ router.get('/api/whoami', async (req, res) => {
 router.get('/api/config', (req, res) => {
   res.json({
     warehouseId: process.env.DATABRICKS_WAREHOUSE_ID,
-    host: process.env.DATABRICKS_HOST,
-    basePath: APP_BASE_PATH
+    host: getDatabricksHost(),
+    basePath: APP_BASE_PATH,
+    environment: isDatabricksApps() ? 'Databricks Apps' : 'Local Development'
   });
+});
+
+// New endpoint to demonstrate user-specific database operations
+router.post('/api/query', async (req, res) => {
+  try {
+    const { sql } = req.body;
+    
+    if (!sql) {
+      return res.status(400).json({
+        error: 'SQL query is required',
+        message: 'Please provide a SQL query in the request body'
+      });
+    }
+
+    console.log(`🔍 User query request: ${sql.substring(0, 100)}${sql.length > 100 ? '...' : ''}`);
+
+    // Execute query using user authentication
+    const result = await executeQuery(req, sql);
+    
+    res.json({
+      success: true,
+      data: result.rows,
+      rowCount: result.rowCount,
+      executionTime: result.executionTime
+    });
+  } catch (error) {
+    console.error('❌ Query execution failed:', error.message);
+    res.status(500).json({
+      success: false,
+      error: 'Query execution failed',
+      message: error.message
+    });
+  }
 });
 
 // Warehouse status endpoint for better error handling
 router.get('/api/warehouse/status', async (req, res) => {
   try {
-    if (!process.env.DATABRICKS_HOST || !process.env.DATABRICKS_WAREHOUSE_ID) {
-      return res.status(400).json({ 
-        error: 'Warehouse not configured',
-        message: 'DATABRICKS_HOST and DATABRICKS_WAREHOUSE_ID are required'
-      });
-    }
-
+    // Get user token for authentication
+    const userToken = getUserToken(req);
+    const host = getDatabricksHost();
+    
     const client = axios.create({
-      baseURL: `${process.env.DATABRICKS_HOST}/api`,
-      headers: { Authorization: `Bearer ${process.env.DATABRICKS_TOKEN}` },
+      baseURL: `${host}/api`,
+      headers: { Authorization: `Bearer ${userToken}` },
       timeout: 10000,
     });
     
@@ -210,200 +250,71 @@ router.get('/api/warehouse/status', async (req, res) => {
 // Quick SQL test endpoint to verify warehouse readiness
 router.post('/api/warehouse/test', async (req, res) => {
   try {
-    const client = axios.create({
-      baseURL: `${process.env.DATABRICKS_HOST}/api`,
-      headers: { Authorization: `Bearer ${process.env.DATABRICKS_TOKEN}` },
-      timeout: 15000,
-    });
+    // Test database connectivity using user authentication
+    const connectionTest = await testConnection(req);
     
-    const response = await client.post('/2.0/sql/statements', {
-      statement: 'SELECT 1 as test, current_timestamp() as now',
-      warehouse_id: process.env.DATABRICKS_WAREHOUSE_ID,
-      wait_timeout: '10s',
-      disposition: 'EXTERNAL_LINKS'
-    });
-
-    if (response.data.status?.state === 'SUCCEEDED') {
+    if (connectionTest.success) {
       res.json({
         success: true,
         message: 'SQL warehouse is ready and responsive',
-        result: response.data.result
+        result: connectionTest.result
       });
     } else {
       res.json({
         success: false,
-        message: `Query state: ${response.data.status?.state || 'UNKNOWN'}`,
-        status: response.data.status
+        message: 'SQL test failed',
+        error: connectionTest.error
       });
     }
   } catch (error) {
-    const errorData = error.response?.data;
-    if (errorData?.error_code === 'DEADLINE_EXCEEDED') {
-      res.json({
-        success: false,
-        message: '⏳ Warehouse is still warming up - complex queries may timeout',
-        error: 'DEADLINE_EXCEEDED'
-      });
-    } else {
-      res.json({
-        success: false,
-        message: `SQL test failed: ${errorData?.error_code || error.message}`,
-        error: errorData?.error_code || 'UNKNOWN'
-      });
-    }
+    console.error('Warehouse test failed:', error.message);
+    res.json({
+      success: false,
+      message: `SQL test failed: ${error.message}`,
+      error: 'CONNECTION_FAILED'
+    });
   }
 });
 
-// Direct SQL endpoint to bypass proxy issues
+// Direct SQL endpoint using user authentication
 router.post('/api/databricks/2.0/sql/statements', async (req, res) => {
-  // Normalize and validate incoming payload
-  const startTime = Date.now();
-  const incoming = req.body || {};
-
-  // Clamp wait_timeout to Databricks allowed range (0 or 5s..50s); default 30s
-  const clampWaitTimeout = (val) => {
-    if (!val) return '30s';
-    // expect format like '30s'
-    const m = String(val).match(/^(\d+)s$/);
-    if (!m) return '30s';
-    const n = parseInt(m[1], 10);
-    if (n === 0) return '0s';
-    const clamped = Math.max(5, Math.min(50, n));
-    return `${clamped}s`;
-  };
-
-  const payload = {
-    statement: incoming.statement,
-    warehouse_id: incoming.warehouse_id || process.env.DATABRICKS_WAREHOUSE_ID,
-    wait_timeout: clampWaitTimeout(incoming.wait_timeout),
-    disposition: incoming.disposition || 'EXTERNAL_LINKS'
-  };
-
-  // Basic validation
-  if (!payload.statement || !payload.warehouse_id) {
-    return res.status(400).json({
-      ok: false,
-      code: 'INVALID_REQUEST',
-      message: 'statement and warehouse_id are required'
-    });
-  }
-
-  // Support cancellation if client disconnects
-  const controller = new AbortController();
-  req.on('aborted', () => controller.abort());
-
   try {
-    console.log('[DIRECT] SQL statement request:', payload.statement.substring(0, 120) + (payload.statement.length > 120 ? '…' : ''));
-
-    const response = await axios.post(
-      `${process.env.DATABRICKS_HOST}/api/2.0/sql/statements`,
-      payload,
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.DATABRICKS_TOKEN}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 120000, // 2 minutes
-        signal: controller.signal
-      }
-    );
-
-    const elapsedMs = Date.now() - startTime;
-    const dbReqId = response?.headers?.['x-request-id'] || response?.data?.status?.request_id;
-    console.log('[DIRECT] SQL response status:', response.status, 'elapsedMs:', elapsedMs, 'requestId:', dbReqId || 'n/a');
-    // If result is not immediately available, poll the statement endpoint until ready
-    let data = response.data || {};
-    const statementId = data?.statement_id || data?.status?.statement_id || data?.statement?.statement_id;
-    const fetchStatement = async (id) => {
-      const pollRes = await axios.get(
-        `${process.env.DATABRICKS_HOST}/api/2.0/sql/statements/${id}`,
-        {
-          headers: { 'Authorization': `Bearer ${process.env.DATABRICKS_TOKEN}` },
-          params: { wait_timeout: '30s' },
-          timeout: 120000
-        }
-      );
-      return pollRes.data;
-    };
-
-    if (!data.result && statementId) {
-      console.log('[DIRECT] Polling for statement result:', statementId);
-      const maxAttempts = 4; // up to ~2 minutes combined with server timeouts
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const polled = await fetchStatement(statementId);
-        if (polled?.result) { data = polled; break; }
-        const stateVal = polled?.status?.state;
-        if (stateVal === 'FAILED' || stateVal === 'CANCELED') {
-          data = polled; break;
-        }
-      }
+    const incoming = req.body || {};
+    
+    if (!incoming.statement) {
+      return res.status(400).json({
+        ok: false,
+        code: 'INVALID_REQUEST',
+        message: 'statement is required'
+      });
     }
 
-    // If result uses EXTERNAL_LINKS, fetch chunks server-side and attach data_array
-    const result = data.result || {};
-    if (!result.data_array && result.external_links) {
-      try {
-        // Recursively collect any http(s) URLs from the external_links object
-        const collectUrls = (node) => {
-          const urls = [];
-          const visit = (v) => {
-            if (!v) return;
-            if (typeof v === 'string') {
-              if (/^https?:\/\//.test(v)) urls.push(v);
-            } else if (Array.isArray(v)) {
-              v.forEach(visit);
-            } else if (typeof v === 'object') {
-              Object.values(v).forEach(visit);
-            }
-          };
-        visit(node);
-          return urls;
-        };
+    console.log('[DIRECT] SQL statement request:', incoming.statement.substring(0, 120) + (incoming.statement.length > 120 ? '…' : ''));
 
-        const chunkUrls = collectUrls(result.external_links);
-        const chunkResponses = await Promise.all(
-          chunkUrls.map((url) => axios.get(url, { timeout: 120000 }))
-        );
-        const combinedRows = [];
-        for (const resp of chunkResponses) {
-          // Normalize rows regardless of format
-          let arr = resp.data?.data_array || resp.data?.data || [];
-          if (Array.isArray(resp.data?.chunks)) {
-            for (const ch of resp.data.chunks) {
-              if (Array.isArray(ch?.data_array)) combinedRows.push(...ch.data_array);
-            }
-          }
-          if (Array.isArray(arr)) combinedRows.push(...arr);
-        }
-        data.result = { ...result, data_array: combinedRows };
-      } catch (e) {
-        console.warn('[DIRECT] Failed to fetch external chunks:', e.message);
+    // Execute query using user authentication
+    const result = await executeQuery(req, incoming.statement);
+    
+    res.json({
+      ok: true,
+      status: { state: 'SUCCEEDED' },
+      result: {
+        data_array: result.rows,
+        row_count: result.rowCount
       }
-    }
-    // Return possibly-enriched response
-    res.json(data);
+    });
   } catch (error) {
-    const elapsedMs = Date.now() - startTime;
-    const status = error.response?.status || 500;
-    const data = error.response?.data;
-    const dbReqId = error.response?.headers?.['x-request-id'] || data?.details?.find?.(d => d['@type']?.includes('RequestInfo'))?.request_id;
-    if (error.name === 'AbortError') {
-      console.warn('[DIRECT] SQL request aborted by client. elapsedMs:', elapsedMs);
-      return res.status(499).json({ ok: false, code: 'CLIENT_ABORT', message: 'Request was cancelled by the client' });
-    }
-    console.error('[DIRECT] SQL error:', status, data || error.message, 'elapsedMs:', elapsedMs, 'requestId:', dbReqId || 'n/a');
-
-    // Forward Databricks error body if present; otherwise send normalized error
-    if (error.response?.data) {
-      return res.status(status).json(error.response.data);
-    }
-    return res.status(500).json({ ok: false, code: 'REQUEST_FAILED', message: error.message });
+    console.error('[DIRECT] SQL error:', error.message);
+    res.status(500).json({ 
+      ok: false, 
+      code: 'REQUEST_FAILED', 
+      message: error.message 
+    });
   }
 });
 
 // API proxy for other Databricks calls (Unity Catalog, etc.)
 router.use('/api/databricks', createProxyMiddleware({
-  target: process.env.DATABRICKS_HOST || 'https://dbc-00000000-0000.cloud.databricks.com',
+  target: getDatabricksHost() || 'https://dbc-00000000-0000.cloud.databricks.com',
   changeOrigin: true,
   timeout: 120000, // 2 minutes for SQL queries
   proxyTimeout: 120000, // 2 minutes for proxy itself
@@ -411,11 +322,17 @@ router.use('/api/databricks', createProxyMiddleware({
     '^/api/databricks/2.0': '/api/2.0',
     '^/api/databricks': '/api/2.1'
   },
-  headers: {
-    'Authorization': `Bearer ${process.env.DATABRICKS_TOKEN}`
-  },
   onProxyReq: (proxyReq, req, res) => {
-    console.log(`[PROXY] ${req.method} ${req.path} -> ${proxyReq.path}`);
+    try {
+      // Set user-specific authorization header
+      const userToken = getUserToken(req);
+      proxyReq.setHeader('Authorization', `Bearer ${userToken}`);
+      console.log(`[PROXY] ${req.method} ${req.path} -> ${proxyReq.path} (user authenticated)`);
+    } catch (error) {
+      console.error(`[PROXY] Authentication failed for ${req.path}:`, error.message);
+      res.status(401).json({ error: 'Authentication failed', message: error.message });
+      return;
+    }
   },
   onProxyRes: (proxyRes, req, res) => {
     console.log(`[PROXY] Response: ${proxyRes.statusCode} for ${req.path}`);
@@ -461,9 +378,10 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Log level: ${LOG_LEVEL}`);
   
-  if (process.env.DATABRICKS_HOST) {
-    console.log(`Databricks host: ${process.env.DATABRICKS_HOST}`);
-  } else {
-    console.log('Databricks host: not configured');
+  // Log authentication environment info
+  try {
+    logAuthEnvironment();
+  } catch (error) {
+    console.log('⚠️  Authentication environment not fully configured:', error.message);
   }
 });

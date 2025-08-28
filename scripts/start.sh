@@ -29,6 +29,14 @@ sleep 3
 echo "🔍 Checking server status..."
 if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/health | grep -q "200"; then
     echo "✅ Backend server: Running on http://localhost:3000"
+    
+    # Test authentication if possible
+    echo "🔐 Testing authentication..."
+    if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/whoami | grep -q "200"; then
+        echo "✅ Authentication: Working"
+    else
+        echo "⚠️  Authentication: Check your .env file and credentials"
+    fi
 else
     echo "❌ Backend server: Not responding"
 fi

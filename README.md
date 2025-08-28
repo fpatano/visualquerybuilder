@@ -43,6 +43,15 @@ Built with modern web technologies optimized for Databricks environments:
 - Unity Catalog enabled workspace
 - SQL Warehouse configured and running
 
+### 🔐 New: User Authentication System
+
+The Visual SQL Query Builder now supports **user-specific authentication**:
+- **Local Development**: Uses personal access tokens from environment variables
+- **Databricks Apps**: Automatically uses runtime-forwarded user tokens
+- **Security**: No hardcoded credentials, respects Unity Catalog permissions
+
+See **[`AUTHENTICATION.md`](./AUTHENTICATION.md)** for complete details.
+
 ### Installation
 
 1. **Clone and install dependencies:**
@@ -59,10 +68,14 @@ Built with modern web technologies optimized for Databricks environments:
    
    Configure your `.env` file with your actual Databricks credentials:
    ```env
+   # Required for local development
    DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
    DATABRICKS_TOKEN=your-personal-access-token
    DATABRICKS_WAREHOUSE_ID=your-warehouse-id
-   DATABRICKS_APP_PORT=3000
+   
+   # Optional
+   NODE_ENV=development
+   LOG_LEVEL=debug
    ```
    
    **How to get your credentials:**
@@ -70,12 +83,17 @@ Built with modern web technologies optimized for Databricks environments:
    - **Personal Access Token**: Databricks workspace → User Settings → Access Tokens → Generate New Token
    - **Warehouse ID**: Databricks workspace → SQL → Warehouses → Copy ID from your warehouse
 
-3. **Start development server:**
+3. **Test authentication setup:**
+   ```bash
+   npm run test:auth
+   ```
+
+4. **Start development server:**
    ```bash
    npm run dev
    ```
 
-4. **Build for production:**
+5. **Build for production:**
    ```bash
    npm run build
    ```
@@ -269,11 +287,21 @@ permissions:
 
 ## Contributing
 
+### For Developers
+See **[`DEVELOPER_SETUP.md`](./DEVELOPER_SETUP.md)** for complete setup instructions, including:
+- Local development environment setup
+- Authentication system configuration
+- Testing and troubleshooting guides
+- Security best practices
+
+### Quick Contribution Steps
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit your changes: `git commit -m 'Add amazing feature'`
-4. Push to the branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
+3. Set up local authentication (see `DEVELOPER_SETUP.md`)
+4. Test your changes: `npm run test:auth`
+5. Commit your changes: `git commit -m 'Add amazing feature'`
+6. Push to the branch: `git push origin feature/amazing-feature`
+7. Open a Pull Request
 
 ### Code Style
 

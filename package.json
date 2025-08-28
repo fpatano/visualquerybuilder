@@ -9,7 +9,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "start": "node server.js",
-    "check": "node scripts/verify-env.js"
+    "check": "node scripts/verify-env.js",
+    "test:auth": "node scripts/test-auth.js"
   },
   "dependencies": {
     "@databricks/sql": "^1.5.3",

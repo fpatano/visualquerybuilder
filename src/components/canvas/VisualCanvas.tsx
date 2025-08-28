@@ -133,7 +133,7 @@ const VisualCanvasInner: React.FC = () => {
         boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
       },
       labelBgStyle: { fill: 'rgba(255, 255, 255, 0.9)' },
-      labelBgPadding: [8, 4],
+      labelBgPadding: [8, 4] as [number, number],
       labelBgBorderRadius: 4,
       style: { 
         stroke: join.joinType === 'INNER' ? '#00A1C9' : join.joinType === 'LEFT' ? '#10B981' : join.joinType === 'RIGHT' ? '#F59E0B' : '#8B5CF6', 

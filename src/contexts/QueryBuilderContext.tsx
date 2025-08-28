@@ -346,7 +346,7 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
       
       const parsed = parseSQL(sql);
       console.log('📊 Parsing result:', parsed);
-      console.log('📊 Parsed tables:', parsed.tables?.map(t => ({ id: t.id, name: t.name, alias: t.alias })));
+              console.log('📊 Parsed tables:', parsed.tables?.map(t => ({ id: t.id, name: t.name, alias: (t as any).alias })));
       
       if (!parsed) {
         console.error('❌ SQL parsing returned null/undefined');

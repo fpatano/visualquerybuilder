@@ -7,6 +7,9 @@ resources:
     description: Main application server
     file_path: ./server.js
     port: "{{DATABRICKS_APP_PORT}}"
+    env:
+      NODE_ENV: production
+      LOG_LEVEL: info
 
 environments:
   - name: development

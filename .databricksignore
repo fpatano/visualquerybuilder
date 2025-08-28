@@ -1,0 +1,46 @@
+# Development files
+src/
+vite.config.ts
+tsconfig.json
+tsconfig.node.json
+tailwind.config.js
+postcss.config.js
+*.ts
+*.tsx
+
+# Build artifacts (except dist)
+.vite/
+*.log
+
+# Development dependencies
+node_modules/
+venv/
+
+# Git and editor files
+.git/
+.gitignore
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation
+README.md
+*.md
+TRANSPILER_UPGRADE_SUMMARY.md
+
+# Scripts (not needed in production)
+scripts/
+
+# Environment files
+.env
+.env.*
+env.example
+
+# Docker files
+Dockerfile
+.dockerignore
