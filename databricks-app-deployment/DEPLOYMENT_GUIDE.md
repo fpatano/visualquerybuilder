@@ -1,68 +1,85 @@
 # Databricks Apps Deployment Guide
 
-## 🚀 Manual Deployment Instructions
+## 🚀 Automated Deployment with Databricks CLI
 
-Since your Databricks CLI version doesn't support Apps directly, follow these manual steps to deploy your Visual SQL Query Builder.
+This guide shows you how to deploy your Visual SQL Query Builder using the modern Databricks CLI with Apps support.
 
-## 📦 What's in This Package
+## 📋 Prerequisites
+
+- **Databricks CLI v0.200+** (with `apps` command support)
+- **Node.js 16+** and **npm**
+- **Databricks workspace access** with Apps permissions
+- **Unity Catalog access** for data operations
+
+## 🔧 Quick Deployment
+
+### Option 1: One-Command Deployment (Recommended)
+
+```bash
+# Build and deploy in one command
+npm run build && /usr/local/bin/databricks apps deploy visual-query-builder \
+  --source-code-path /Workspace/Users/fpatano@gmail.com/visual-query-builder
+```
+
+### Option 2: Step-by-Step Deployment
+
+1. **Build the application**:
+   ```bash
+   npm run build
+   ```
+
+2. **Deploy to Databricks Apps**:
+   ```bash
+   /usr/local/bin/databricks apps deploy visual-query-builder \
+     --source-code-path /Workspace/Users/fpatano@gmail.com/visual-query-builder
+   ```
+
+3. **Verify deployment**:
+   ```bash
+   /usr/local/bin/databricks apps get visual-query-builder
+   ```
+
+## 📦 What Gets Deployed
 
 - `app.yaml` - App configuration and permissions
 - `server.js` - Node.js server for the app
 - `package.json` - Dependencies and scripts
 - `dist/` - Built React application
+- `requirements.txt` - Python dependencies (if needed)
 
-## 🔧 Step-by-Step Deployment
+## 🌐 App Access
 
-### Step 1: Upload to Databricks Workspace
-
-1. **Go to your Databricks workspace**
-2. **Navigate to Workspace → Users → [Your Username]**
-3. **Create a new folder**: `visual-query-builder`
-4. **Upload all files** from this package to that folder
-
-### Step 2: Configure as Databricks App
-
-1. **In your Databricks workspace, go to Admin → Apps**
-2. **Click "Create App"**
-3. **Fill in the details**:
-   - **Name**: `visual-query-builder`
-   - **Display Name**: `Visual SQL Query Builder`
-   - **Description**: `A modern visual interface for building SQL queries with Unity Catalog integration`
-   - **Source Code Path**: `/Users/[your-username]/visual-query-builder`
-   - **Entry Point**: `server.js`
-
-### Step 3: Configure App Settings
-
-1. **Environment Variables**:
-   - `NODE_ENV`: `production`
-   - `LOG_LEVEL`: `info`
-   - `FEATURE_ALLOW_NO_DBRX`: `0`
-
-2. **Permissions** (should be auto-configured from app.yaml):
-   - `CAN_USE_CATALOG`
-   - `CAN_USE_SCHEMA`
-   - `CAN_SELECT`
-   - `CAN_USE_WAREHOUSE`
-   - `CAN_READ_CATALOG`
-   - `CAN_READ_SCHEMA`
-   - `CAN_READ_TABLE`
-   - `CAN_READ_COLUMN`
-
-### Step 4: Deploy and Launch
-
-1. **Click "Deploy"** to deploy the app
-2. **Wait for deployment** to complete
-3. **Go to Apps** in the left sidebar
-4. **Find "Visual SQL Query Builder"** and click **Launch**
+After successful deployment, your app will be available at:
+- **Apps Menu**: Navigate to Apps in your Databricks workspace
+- **Direct URL**: The CLI will provide the app URL
+- **App Name**: `visual-query-builder`
 
 ## ✅ Verification Steps
 
 After deployment, verify:
 
-1. **App launches successfully** from the Apps menu
-2. **Browser console shows** successful Databricks Apps context validation
-3. **Unity Catalog metadata loads** without errors
-4. **SQL queries execute** successfully
+1. **App status shows `SUCCEEDED`**:
+   ```bash
+   /usr/local/bin/databricks apps get visual-query-builder
+   ```
+
+2. **App launches successfully** from the Apps menu
+3. **Browser console shows** successful Databricks Apps context validation
+4. **Unity Catalog metadata loads** without errors
+5. **SQL queries execute** successfully
+
+## 🔄 Updating the App
+
+To deploy updates:
+
+```bash
+# Build the new version
+npm run build
+
+# Deploy the update
+/usr/local/bin/databricks apps deploy visual-query-builder \
+  --source-code-path /Workspace/Users/fpatano@gmail.com/visual-query-builder
+```
 
 ## 🚨 Important Notes
 
@@ -72,6 +89,13 @@ After deployment, verify:
 - **Contact workspace admin** if you lack required permissions
 
 ## 🔍 Troubleshooting
+
+### If Deployment Fails
+
+1. **Check CLI version**: Ensure you have `databricks CLI v0.200+`
+2. **Verify authentication**: Run `databricks configure --help`
+3. **Check workspace path**: Use `/Workspace/Users/...` format
+4. **Verify permissions**: Ensure you have Apps deployment rights
 
 ### If App Shows "Databricks Apps Context Required"
 
@@ -103,11 +127,39 @@ If issues persist:
 
 ## 🎯 Success Indicators
 
+- ✅ App deploys successfully with CLI
+- ✅ App status shows `SUCCEEDED`
 - ✅ App launches from workspace Apps menu
 - ✅ Console shows "Databricks Apps context is valid and ready!"
 - ✅ Unity Catalog metadata loads successfully
 - ✅ SQL queries execute without errors
 - ✅ No "localhost" or "context required" errors
+
+## 🔧 CLI Commands Reference
+
+### App Management
+```bash
+# List all apps
+databricks apps list
+
+# Get app details
+databricks apps get visual-query-builder
+
+# Deploy app
+databricks apps deploy visual-query-builder --source-code-path /path/to/source
+
+# Delete app (if needed)
+databricks apps delete visual-query-builder
+```
+
+### Workspace Operations
+```bash
+# List workspace contents
+databricks workspace list /Users/fpatano@gmail.com/visual-query-builder
+
+# Upload files
+databricks workspace import local-file.py /Users/fpatano@gmail.com/path/
+```
 
 ---
 

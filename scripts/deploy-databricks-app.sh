@@ -2,6 +2,7 @@
 
 # Databricks Apps Deployment Script
 # This script deploys the Visual SQL Query Builder as a Databricks App
+# Requires Databricks CLI v0.200+ with apps support
 
 set -e
 
@@ -15,8 +16,8 @@ NC='\033[0m' # No Color
 # Configuration
 APP_NAME="visual-query-builder"
 APP_DISPLAY_NAME="Visual SQL Query Builder"
-WORKSPACE_URL=""
-APP_ID=""
+WORKSPACE_PATH="/Workspace/Users/fpatano@gmail.com/visual-query-builder"
+CLI_PATH="/usr/local/bin/databricks"
 
 echo -e "${BLUE}🚀 Databricks Apps Deployment Script${NC}"
 echo "=================================="
@@ -25,9 +26,21 @@ echo "=================================="
 check_requirements() {
     echo -e "${BLUE}Checking requirements...${NC}"
     
-    if ! command -v databricks &> /dev/null; then
-        echo -e "${RED}❌ Databricks CLI not found${NC}"
-        echo "Please install Databricks CLI: https://docs.databricks.com/dev-tools/cli/index.html"
+    # Check for new Databricks CLI with apps support
+    if ! command -v "$CLI_PATH" &> /dev/null; then
+        echo -e "${RED}❌ New Databricks CLI not found at $CLI_PATH${NC}"
+        echo "Please install Databricks CLI v0.200+ with apps support"
+        echo "Current CLI at $(which databricks) may be outdated"
+        exit 1
+    fi
+    
+    # Verify CLI version supports apps
+    CLI_VERSION=$("$CLI_PATH" --version 2>/dev/null | grep -o 'v[0-9]\+\.[0-9]\+' || echo "unknown")
+    echo "Found CLI version: $CLI_VERSION"
+    
+    if ! "$CLI_PATH" apps --help &> /dev/null; then
+        echo -e "${RED}❌ CLI doesn't support 'apps' command${NC}"
+        echo "Please upgrade to Databricks CLI v0.200+"
         exit 1
     fi
     
@@ -91,73 +104,66 @@ validate_config() {
     echo -e "${GREEN}✅ App configuration validated${NC}"
 }
 
-# Get workspace information
-get_workspace_info() {
-    echo -e "${BLUE}Getting workspace information...${NC}"
+# Check authentication
+check_auth() {
+    echo -e "${BLUE}Checking authentication...${NC}"
     
-    # Check if already authenticated
-    if ! databricks auth list &> /dev/null; then
-        echo -e "${YELLOW}⚠️  Not authenticated with Databricks${NC}"
-        echo "Please run: databricks auth login"
+    # Test CLI authentication
+    if ! "$CLI_PATH" workspace list /Users &> /dev/null; then
+        echo -e "${RED}❌ Not authenticated with Databricks${NC}"
+        echo "Please run: $CLI_PATH configure"
         exit 1
     fi
     
-    # Get workspace URL
-    WORKSPACE_URL=$(databricks workspace list --output JSON | jq -r '.workspace_url' 2>/dev/null || echo "")
-    
-    if [ -z "$WORKSPACE_URL" ]; then
-        echo -e "${YELLOW}⚠️  Could not determine workspace URL${NC}"
-        read -p "Please enter your Databricks workspace URL: " WORKSPACE_URL
-    fi
-    
-    echo -e "${GREEN}✅ Workspace URL: ${WORKSPACE_URL}${NC}"
+    echo -e "${GREEN}✅ Authentication verified${NC}"
 }
 
-# Deploy the app
+# Deploy the app using new CLI
 deploy_app() {
-    echo -e "${BLUE}Deploying app to Databricks...${NC}"
+    echo -e "${BLUE}Deploying app to Databricks Apps...${NC}"
     
-    # Create app bundle
-    echo "Creating app bundle..."
-    databricks apps create \
-        --name "$APP_NAME" \
-        --display-name "$APP_DISPLAY_NAME" \
-        --description "Visual SQL Query Builder for Databricks" \
-        --manifest-file app.yaml \
-        --bundle-path dist \
-        --output JSON > deploy_output.json
+    # Deploy using the new apps command
+    echo "Deploying app: $APP_NAME"
+    echo "Source path: $WORKSPACE_PATH"
     
-    # Extract app ID
-    APP_ID=$(cat deploy_output.json | jq -r '.app_id')
+    "$CLI_PATH" apps deploy "$APP_NAME" \
+        --source-code-path "$WORKSPACE_PATH" \
+        --mode SNAPSHOT
     
-    if [ "$APP_ID" = "null" ] || [ -z "$APP_ID" ]; then
-        echo -e "${RED}❌ Failed to deploy app${NC}"
-        cat deploy_output.json
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✅ App deployed successfully${NC}"
+    else
+        echo -e "${RED}❌ App deployment failed${NC}"
         exit 1
     fi
-    
-    echo -e "${GREEN}✅ App deployed successfully with ID: ${APP_ID}${NC}"
-    
-    # Clean up
-    rm deploy_output.json
 }
 
 # Verify deployment
 verify_deployment() {
     echo -e "${BLUE}Verifying deployment...${NC}"
     
+    # Wait a moment for deployment to complete
+    echo "Waiting for deployment to complete..."
+    sleep 10
+    
     # Check app status
     echo "Checking app status..."
-    databricks apps get --app-id "$APP_ID" --output JSON > app_status.json
+    "$CLI_PATH" apps get "$APP_NAME" --output JSON > app_status.json
     
-    APP_STATUS=$(cat app_status.json | jq -r '.status')
-    APP_URL=$(cat app_status.json | jq -r '.url')
+    APP_STATUS=$(cat app_status.json | jq -r '.active_deployment.status.state' 2>/dev/null || echo "unknown")
+    APP_URL=$(cat app_status.json | jq -r '.url' 2>/dev/null || echo "unknown")
     
     echo -e "${GREEN}✅ App status: ${APP_STATUS}${NC}"
     echo -e "${GREEN}✅ App URL: ${APP_URL}${NC}"
     
     # Clean up
-    rm app_status.json
+    rm -f app_status.json
+    
+    if [ "$APP_STATUS" = "SUCCEEDED" ]; then
+        echo -e "${GREEN}🎉 Deployment successful!${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Deployment may still be in progress${NC}"
+    fi
 }
 
 # Main deployment flow
@@ -165,9 +171,9 @@ main() {
     echo -e "${BLUE}Starting deployment process...${NC}"
     
     check_requirements
+    check_auth
     build_app
     validate_config
-    get_workspace_info
     deploy_app
     verify_deployment
     
@@ -175,7 +181,7 @@ main() {
     echo -e "${GREEN}🎉 Deployment completed successfully!${NC}"
     echo ""
     echo -e "${BLUE}Next steps:${NC}"
-    echo "1. Go to your Databricks workspace: ${WORKSPACE_URL}"
+    echo "1. Go to your Databricks workspace"
     echo "2. Navigate to Apps in the left sidebar"
     echo "3. Find '${APP_DISPLAY_NAME}' and click 'Launch'"
     echo "4. The app will open in a new tab with proper Databricks Apps context"
@@ -187,6 +193,9 @@ main() {
     echo "1. Check the browser console for detailed error messages"
     echo "2. Verify the app has the required Unity Catalog permissions"
     echo "3. Contact your workspace admin if problems persist"
+    echo ""
+    echo -e "${BLUE}To check app status anytime:${NC}"
+    echo "   $CLI_PATH apps get $APP_NAME"
 }
 
 # Run main function

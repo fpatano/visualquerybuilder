@@ -13,7 +13,9 @@
     "test:auth": "node scripts/test-auth.js",
     "verify:apps": "node scripts/verify-databricks-apps.js",
     "deploy:apps": "./scripts/deploy-databricks-app.sh",
-    "postbuild": "echo '✅ Build complete. Run \"npm run deploy:apps\" to deploy to Databricks Apps.'"
+    "deploy:new": "./deploy-new.sh",
+    "deploy:cli": "npm run build && /usr/local/bin/databricks apps deploy visual-query-builder --source-code-path /Workspace/Users/fpatano@gmail.com/visual-query-builder",
+    "postbuild": "echo '✅ Build complete. Run \"npm run deploy:new\" to deploy to Databricks Apps.'"
   },
   "dependencies": {
     "@databricks/sql": "^1.5.3",

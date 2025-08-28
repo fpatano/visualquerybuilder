@@ -81,6 +81,24 @@ app.use(helmet({
 // Request logging
 app.use(logger);
 
+// Databricks Apps detection middleware
+app.use((req, res, next) => {
+  // Check for Databricks Apps headers
+  const hasForwardedToken = !!req.header('x-forwarded-access-token');
+  const hasForwardedEmail = !!req.header('x-forwarded-email');
+  const hasDatabricksHeaders = hasForwardedToken || hasForwardedEmail;
+  
+  console.log('🔍 Request Headers Analysis:');
+  console.log(`  - x-forwarded-access-token: ${hasForwardedToken ? '✅ present' : '❌ missing'}`);
+  console.log(`  - x-forwarded-email: ${hasForwardedEmail ? '✅ present' : '❌ missing'}`);
+  console.log(`  - Databricks Apps headers: ${hasDatabricksHeaders ? '✅ detected' : '❌ not detected'}`);
+  
+  // Set environment context for this request
+  req.isDatabricksApps = hasDatabricksHeaders;
+  
+  next();
+});
+
 // Body parsing
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -180,6 +198,26 @@ router.get('/api/config', (req, res) => {
     basePath: APP_BASE_PATH,
     environment: isDatabricksApps() ? 'Databricks Apps' : 'Local Development'
   });
+});
+
+// Debug endpoint to show all environment variables (for troubleshooting)
+router.get('/api/debug/env', (req, res) => {
+  const envInfo = {
+    NODE_ENV: process.env.NODE_ENV,
+    PORT: process.env.PORT,
+    DATABRICKS_SERVER_HOSTNAME: process.env.DATABRICKS_SERVER_HOSTNAME,
+    DATABRICKS_WAREHOUSE_ID: process.env.DATABRICKS_WAREHOUSE_ID,
+    DATABRICKS_APP_PORT: process.env.DATABRICKS_APP_PORT,
+    APP_BASE_PATH: process.env.APP_BASE_PATH,
+    DATABRICKS_HOST: process.env.DATABRICKS_HOST,
+    isDatabricksApps: isDatabricksApps(),
+    requestHeaders: req.headers,
+    requestIsDatabricksApps: req.isDatabricksApps,
+    timestamp: new Date().toISOString()
+  };
+  
+  console.log('🔍 Environment Debug Info:', envInfo);
+  res.json(envInfo);
 });
 
 // New endpoint to demonstrate user-specific database operations

@@ -9,9 +9,34 @@ export interface DatabricksContext {
   workspace?: string;
   user?: string;
   permissions?: string[];
-  environment: 'databricks-apps' | 'localhost' | 'unknown';
+  environment: 'databricks-apps' | 'databricks-apps-url' | 'localhost' | 'unknown';
   warnings: string[];
   errors: string[];
+}
+
+/**
+ * Alternative detection method when window.databricks is not available
+ */
+export function detectDatabricksAppsFromEnvironment(): boolean {
+  const href = window.location.href;
+  const hostname = window.location.hostname;
+  
+  // Check for Databricks Apps URL patterns
+  const isDatabricksAppsUrl = href.includes('databricksapps.com') || 
+                              href.includes('databricks.com') ||
+                              hostname.includes('databricks');
+  
+  // Check for Databricks Apps specific patterns
+  const hasDatabricksAppsPatterns = href.includes('aws.databricksapps.com') ||
+                                   href.includes('azure.databricksapps.com') ||
+                                   href.includes('gcp.databricksapps.com');
+  
+  console.log('🔍 Alternative Databricks Apps Detection:');
+  console.log(`  - Databricks Apps URL: ${isDatabricksAppsUrl ? '✅' : '❌'}`);
+  console.log(`  - Databricks Apps patterns: ${hasDatabricksAppsPatterns ? '✅' : '❌'}`);
+  console.log(`  - Hostname: ${hostname}`);
+  
+  return isDatabricksAppsUrl || hasDatabricksAppsPatterns;
 }
 
 /**
@@ -77,25 +102,55 @@ export function checkDatabricksContext(): DatabricksContext {
     // Check if we're running on localhost
     const hostname = window.location.hostname;
     const port = window.location.port;
+    const protocol = window.location.protocol;
+    const href = window.location.href;
+    
+    console.log('🌐 Browser Environment Details:');
+    console.log(`  - URL: ${href}`);
+    console.log(`  - Hostname: ${hostname}`);
+    console.log(`  - Port: ${port}`);
+    console.log(`  - Protocol: ${protocol}`);
+    console.log(`  - User Agent: ${navigator.userAgent}`);
+    
+    // Check for Databricks Apps URL patterns
+    const isDatabricksAppsUrl = detectDatabricksAppsFromEnvironment();
+    console.log(`  - Databricks Apps URL pattern: ${isDatabricksAppsUrl ? '✅ detected' : '❌ not detected'}`);
     
     if (hostname === 'localhost' || hostname === '127.0.0.1' || port === '3000' || port === '5173') {
       context.environment = 'localhost';
       context.errors.push('Running on localhost - this app must be deployed as a Databricks App');
       console.error('❌ Running on localhost - this app must be deployed as a Databricks App');
       console.error('❌ To fix: Deploy the app via Databricks Apps and launch from the workspace UI');
+    } else if (isDatabricksAppsUrl) {
+      context.environment = 'databricks-apps-url';
+      context.errors.push('Databricks Apps URL detected but context not injected');
+      console.error('❌ Databricks Apps URL detected but context not injected');
+      console.error('❌ This may indicate:');
+      console.error('   - App is not being launched from Databricks workspace Apps menu');
+      console.error('   - Direct URL access instead of proper Apps context');
+      console.error('   - Runtime context injection issue');
+      console.error('❌ Solution: Launch the app from your Databricks workspace Apps menu');
+      
+      // Try to wait for context injection (fallback mechanism)
+      console.log('🔄 Attempting to wait for Databricks Apps context injection...');
+      setTimeout(() => {
+        const retryDatabricks = (window as any).databricks;
+        if (retryDatabricks) {
+          console.log('✅ Databricks Apps context found on retry:', retryDatabricks);
+        } else {
+          console.log('❌ Databricks Apps context still not available on retry');
+        }
+      }, 2000);
+      
     } else {
       context.environment = 'unknown';
       context.errors.push('Databricks Apps context not available');
       console.error('❌ Databricks Apps context not available');
+      console.error('❌ This may indicate:');
+      console.error('   - App is not running in Databricks Apps environment');
+      console.error('   - Browser context is not properly initialized');
+      console.error('   - App needs to be launched from Databricks workspace Apps menu');
     }
-    
-    // Log browser details for debugging
-    console.error('🌐 Browser Details:');
-    console.error(`  - URL: ${window.location.href}`);
-    console.error(`  - Hostname: ${hostname}`);
-    console.error(`  - Port: ${port}`);
-    console.error(`  - User Agent: ${navigator.userAgent}`);
-    console.error(`  - Protocol: ${window.location.protocol}`);
   }
 
   // Log final context status

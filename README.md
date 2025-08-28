@@ -31,7 +31,13 @@ A modern, visual interface for building SQL queries with seamless Unity Catalog 
 
 4. **Deploy to Databricks Apps**
    ```bash
+   # Option 1: Use the updated deployment script
    ./scripts/deploy-databricks-app.sh
+   
+   # Option 2: Deploy manually with CLI
+   npm run build
+   /usr/local/bin/databricks apps deploy visual-query-builder \
+     --source-code-path /Workspace/Users/fpatano@gmail.com/visual-query-builder
    ```
 
 5. **Launch from Databricks Workspace**
@@ -40,6 +46,12 @@ A modern, visual interface for building SQL queries with seamless Unity Catalog 
    - Find "Visual SQL Query Builder" and click **Launch**
 
 ## 🔧 Databricks Apps Configuration
+
+### Prerequisites
+
+- **Databricks CLI v0.200+** with `apps` command support
+- **Workspace Apps permissions** for deployment
+- **Unity Catalog access** for data operations
 
 ### Required Permissions
 
@@ -80,7 +92,7 @@ The app automatically detects whether it's running in Databricks Apps or local d
 - [ ] Confirm app is running in Databricks Apps environment
 
 ### 2. Deployment Verification
-- [ ] App is deployed via Databricks CLI: `databricks apps create`
+- [ ] App is deployed via Databricks CLI: `databricks apps deploy`
 - [ ] App appears in workspace Apps menu
 - [ ] App launches from workspace UI (not direct URL access)
 
@@ -126,6 +138,19 @@ npm run build
 ```
 
 The build output in the `dist/` directory is what gets deployed to Databricks Apps.
+
+### Updating Deployed App
+
+To deploy updates to your running app:
+
+```bash
+# Build the new version
+npm run build
+
+# Deploy the update
+/usr/local/bin/databricks apps deploy visual-query-builder \
+  --source-code-path /Workspace/Users/fpatano@gmail.com/visual-query-builder
+```
 
 ## 📋 Verification Scripts
 
