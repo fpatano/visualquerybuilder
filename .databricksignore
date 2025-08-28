@@ -1,5 +1,5 @@
 # Development files
-src/
+# src/ - REMOVED: needed for server.js imports
 vite.config.ts
 tsconfig.json
 tsconfig.node.json
@@ -11,6 +11,9 @@ postcss.config.js
 # Build artifacts (except dist)
 .vite/
 *.log
+
+# IMPORTANT: dist/ directory is needed for the app to run
+# dist/ is explicitly included
 
 # Development dependencies
 node_modules/

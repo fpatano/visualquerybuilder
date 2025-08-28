@@ -1,47 +1,58 @@
 import axios from 'axios';
 import { CatalogItem, QueryResult, DataProfile, ProfileMode } from '../types';
+import { checkDatabricksContext as checkContext, validateUnityCatalogAccess } from '../utils/databricks-context';
 
 const API_BASE = '/api/databricks';
 
-// Configure axios defaults - increased for large query processing
+// Configure axios defaults for Databricks Apps
 axios.defaults.timeout = 120000; // 2 minutes for complex queries
+axios.defaults.withCredentials = true; // Important for OAuth context
+axios.defaults.headers.common['Accept'] = 'application/json';
+axios.defaults.headers.common['Content-Type'] = 'application/json';
+
+// Check if running in Databricks Apps context
+function checkDatabricksContext(): boolean {
+  const context = checkContext();
+  if (context.isAvailable) {
+    console.log('✅ Databricks Apps context available');
+    return true;
+  } else {
+    console.warn('⚠️ Not running in Databricks Apps context');
+    console.warn('📋 Context details:', context);
+    return false;
+  }
+}
 
 // Get warehouse ID from server config (no fallbacks)
 let warehouseId: string | null = null;
 
-async function getWarehouseId(): Promise<string> {
-  if (!warehouseId) {
-    const response = await axios.get('/api/config');
-    warehouseId = response.data?.warehouseId || null;
-  }
-  if (!warehouseId) {
-    throw new Error('DATABRICKS_WAREHOUSE_ID is not configured. Please set it in your environment.');
-  }
-  return warehouseId;
-}
-
-// Check and start warehouse if needed
-async function ensureWarehouseRunning(): Promise<boolean> {
+export async function getWarehouseId(): Promise<string> {
+  if (warehouseId) return warehouseId;
+  
   try {
-    const warehouse_id = await getWarehouseId();
-    const statusResponse = await axios.get(`/api/databricks/2.0/sql/warehouses/${warehouse_id}`);
+    const response = await fetch('/api/config');
+    const config = await response.json();
+    warehouseId = config.warehouseId;
     
-    const state = statusResponse.data.state;
-    console.log(`🏭 Warehouse state: ${state}`);
-    
-    if (state === 'STOPPED') {
-      console.log('🚀 Starting warehouse...');
-      await axios.post(`/api/databricks/2.0/sql/warehouses/${warehouse_id}/start`);
-      
-      // Wait a moment for startup to begin
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      return false; // Not immediately ready
+    if (!warehouseId) {
+      throw new Error('No warehouse ID configured');
     }
     
-    return state === 'RUNNING';
+    console.log('✅ Warehouse ID retrieved:', warehouseId);
+    return warehouseId;
   } catch (error) {
-    console.warn('Failed to check warehouse status:', error);
+    console.error('❌ Failed to get warehouse ID:', error);
+    throw new Error('Warehouse configuration not available');
+  }
+}
+
+async function ensureWarehouseRunning(): Promise<boolean> {
+  try {
+    const response = await fetch('/api/warehouse/status', { method: 'POST' });
+    const result = await response.json();
+    return result.status === 'RUNNING';
+  } catch (error) {
+    console.error('❌ Failed to check warehouse status:', error);
     return false;
   }
 }
@@ -49,6 +60,15 @@ async function ensureWarehouseRunning(): Promise<boolean> {
 export async function fetchCatalogMetadata(): Promise<CatalogItem[]> {
   try {
     console.log('Fetching catalogs from Databricks Unity Catalog...');
+    
+    // Validate Databricks Apps context and Unity Catalog access
+    if (!checkDatabricksContext()) {
+      throw new Error('Not running in Databricks Apps context');
+    }
+    
+    if (!validateUnityCatalogAccess()) {
+      throw new Error('Insufficient permissions for Unity Catalog access');
+    }
     
     // Only fetch catalogs initially - load schemas/tables lazily
     const catalogsResponse = await axios.get(`${API_BASE}/unity-catalog/catalogs`);
@@ -73,6 +93,7 @@ export async function fetchCatalogMetadata(): Promise<CatalogItem[]> {
     if (axios.isAxiosError(error)) {
       const status = error.response?.status;
       const msg = error.response?.data?.message || error.message;
+      console.error(`Unity Catalog API Error ${status}:`, error.response?.data);
       throw new Error(`Unity Catalog list failed (${status}): ${msg}`);
     }
     throw error;
@@ -81,24 +102,25 @@ export async function fetchCatalogMetadata(): Promise<CatalogItem[]> {
 
 export async function fetchSchemas(catalogName: string): Promise<CatalogItem[]> {
   try {
-    console.log(`Fetching schemas for catalog: ${catalogName}`);
-    const schemasResponse = await axios.get(`${API_BASE}/unity-catalog/schemas`, {
-      params: { catalog_name: catalogName }
-    });
+    // Validate context before making API calls
+    if (!checkDatabricksContext()) {
+      throw new Error('Not running in Databricks Apps context');
+    }
     
-    const schemas: CatalogItem[] = (schemasResponse.data.schemas || [])
-      .filter((schema: any) => schema.name !== 'information_schema') // Skip information_schema for performance
+    const schemasResponse = await axios.get(`${API_BASE}/unity-catalog/schemas?catalog_name=${catalogName}`);
+    console.log(`Schemas for ${catalogName}:`, schemasResponse.data);
+    
+    return (schemasResponse.data.schemas || [])
+      .filter((schema: any) => schema.name !== 'information_schema') // Skip system schemas
       .map((schema: any) => ({
         id: `${catalogName}.${schema.name}`,
         name: schema.name,
         type: 'schema' as const,
         parent: catalogName,
-        children: [], // Will be loaded lazily
+        children: [],
         comment: schema.comment,
         isLoaded: false
       }));
-    
-    return schemas;
   } catch (error) {
     console.error(`Failed to fetch schemas for catalog ${catalogName}:`, error);
     return [];
@@ -107,50 +129,52 @@ export async function fetchSchemas(catalogName: string): Promise<CatalogItem[]> 
 
 export async function fetchTables(catalogName: string, schemaName: string): Promise<CatalogItem[]> {
   try {
-    console.log(`Fetching tables for schema: ${catalogName}.${schemaName}`);
-    const tablesResponse = await axios.get(`${API_BASE}/unity-catalog/tables`, {
-      params: { 
-        catalog_name: catalogName,
-        schema_name: schemaName 
-      }
-    });
+    // Validate context before making API calls
+    if (!checkDatabricksContext()) {
+      throw new Error('Not running in Databricks Apps context');
+    }
     
-    const tables: CatalogItem[] = (tablesResponse.data.tables || []).map((table: any) => ({
-      id: `${catalogName}.${schemaName}.${table.name}`,
-      name: table.name,
-      type: 'table' as const,
-      parent: `${catalogName}.${schemaName}`,
-      children: [], // Will be loaded lazily
-      comment: table.comment,
-      isLoaded: false
-    }));
+    const tablesResponse = await axios.get(`${API_BASE}/unity-catalog/tables?catalog_name=${catalogName}&schema_name=${schemaName}`);
+    console.log(`Tables for ${catalogName}.${schemaName}:`, tablesResponse.data);
     
-    return tables;
+    return (tablesResponse.data.tables || [])
+      .map((table: any) => ({
+        id: `${catalogName}.${schemaName}.${table.name}`,
+        name: table.name,
+        type: 'table' as const,
+        parent: `${catalogName}.${schemaName}`,
+        children: [],
+        comment: table.comment,
+        isLoaded: false
+      }));
   } catch (error) {
-    console.error(`Failed to fetch tables for schema ${catalogName}.${schemaName}:`, error);
+    console.error(`Failed to fetch tables for ${catalogName}.${schemaName}:`, error);
     return [];
   }
 }
 
 export async function fetchColumns(catalogName: string, schemaName: string, tableName: string): Promise<CatalogItem[]> {
   try {
-    console.log(`Fetching columns for table: ${catalogName}.${schemaName}.${tableName}`);
-    const columnsResponse = await axios.get(`${API_BASE}/unity-catalog/tables/${catalogName}.${schemaName}.${tableName}`);
+    // Validate context before making API calls
+    if (!checkDatabricksContext()) {
+      throw new Error('Not running in Databricks Apps context');
+    }
     
-    const columns: CatalogItem[] = (columnsResponse.data.columns || []).map((col: any) => ({
-      id: `${catalogName}.${schemaName}.${tableName}.${col.name}`,
-      name: col.name,
-      type: 'column' as const,
-      parent: `${catalogName}.${schemaName}.${tableName}`,
-      dataType: col.type_name || col.data_type || 'STRING',
-      nullable: col.nullable !== false,
-      comment: col.comment,
-      children: []
-    }));
+    const columnsResponse = await axios.get(`${API_BASE}/unity-catalog/columns?catalog_name=${catalogName}&schema_name=${schemaName}&table_name=${tableName}`);
+    console.log(`Columns for ${catalogName}.${schemaName}.${tableName}:`, columnsResponse.data);
     
-    return columns;
+    return (columnsResponse.data.columns || [])
+      .map((column: any) => ({
+        id: `${catalogName}.${schemaName}.${tableName}.${column.name}`,
+        name: column.name,
+        type: 'column' as const,
+        parent: `${catalogName}.${schemaName}.${tableName}`,
+        dataType: column.type_text,
+        comment: column.comment,
+        isLoaded: true
+      }));
   } catch (error) {
-    console.error(`Failed to fetch columns for table ${catalogName}.${schemaName}.${tableName}:`, error);
+    console.error(`Failed to fetch columns for ${catalogName}.${schemaName}.${tableName}:`, error);
     return [];
   }
 }
@@ -158,6 +182,11 @@ export async function fetchColumns(catalogName: string, schemaName: string, tabl
 export async function executeDatabricksQuery(sql: string, opts?: { signal?: AbortSignal }): Promise<QueryResult> {
   try {
     console.log('Executing SQL query:', sql);
+    
+    // Validate context before making API calls
+    if (!checkDatabricksContext()) {
+      throw new Error('Not running in Databricks Apps context');
+    }
     
     const startTime = Date.now();
     
@@ -189,116 +218,90 @@ export async function executeDatabricksQuery(sql: string, opts?: { signal?: Abor
     const result = response.data?.result;
     if (!result) {
       // Try direct poll via backend passthrough (server polls if needed)
-      const retry = await axios.post(`/api/databricks/2.0/sql/statements`, {
-        statement: sql,
-        warehouse_id,
-        wait_timeout: '30s',
-        disposition: 'EXTERNAL_LINKS'
-      }, { signal: opts?.signal });
-      if (!retry.data?.result) throw new Error('No result returned from query');
-      const r2 = retry.data.result;
-      const columnsFromManifest2: string[] = r2.manifest?.schema?.columns?.map((c: any) => c.name) || [];
-      const rows2: any[][] = Array.isArray(r2.data_array) ? r2.data_array : [];
-      const executionTime2 = Date.now() - startTime;
-      const requestId2 = (retry.headers as any)?.['x-request-id'] || retry.data?.status?.request_id;
+      const pollResponse = await axios.get(`/api/databricks/2.0/sql/statements/${response.data.statement_id}`, {
+        signal: opts?.signal
+      });
+      
+      const pollResult = pollResponse.data?.result;
+      if (pollResult && pollResult.data_array) {
+        return {
+          columns: pollResult.schema?.columns?.map((c: any) => c.name) || [],
+          rows: pollResult.data_array || [],
+          executionTime,
+          rowCount: pollResult.data_array.length,
+          metadata: {
+            requestId,
+            statementId: response.data.statement_id,
+            status: pollResult.status?.state
+          }
+        };
+      }
+      
+      throw new Error('No result data available from Databricks SQL API');
+    }
+
+    // Handle successful response with data
+    if (result.data_array) {
       return {
-        columns: columnsFromManifest2,
-        rows: rows2,
-        executionTime: executionTime2,
-        rowCount: typeof r2.row_count === 'number' ? r2.row_count : rows2.length,
-        metadata: { requestId: requestId2 }
+        columns: result.schema?.columns?.map((c: any) => c.name) || [],
+        rows: result.data_array || [],
+        executionTime,
+        rowCount: result.data_array.length,
+        metadata: {
+          requestId,
+          statementId: response.data.statement_id,
+          status: result.status?.state
+        }
       };
     }
 
-    // Columns come from the manifest schema
-    const columnsFromManifest: string[] = result.manifest?.schema?.columns?.map((c: any) => c.name) || [];
-
-    // Expect server to provide data_array even when EXTERNAL_LINKS are used
-    const rows: any[][] = Array.isArray(result.data_array) ? result.data_array : [];
-
-    const resultObj: QueryResult = {
-      columns: columnsFromManifest,
-      rows,
+    // Handle response without data (e.g., DDL statements)
+    return {
+      columns: ['Result'],
+      rows: [['Query executed successfully']],
       executionTime,
-      rowCount: typeof result.row_count === 'number' ? result.row_count : rows.length,
-      metadata: { requestId }
+      rowCount: 1,
+      metadata: {
+        requestId,
+        statementId: response.data.statement_id,
+        status: result.status?.state
+      }
     };
-    return resultObj;
-    
+
   } catch (error) {
     console.error('Query execution failed:', error);
     
-    // Log more details for debugging
-    if (axios.isAxiosError(error)) {
-      console.error('Axios error details:', {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        url: error.config?.url
-      });
+    // Handle context-related errors specifically
+    if (error.message?.includes('Databricks Apps context')) {
+      return {
+        columns: ['Error'],
+        rows: [['❌ This app must be run within Databricks workspace as an installed app']],
+        executionTime: 0,
+        rowCount: 1,
+        error: 'Databricks Apps context required'
+      };
     }
     
     if (axios.isAxiosError(error)) {
-      const errorData = error.response?.data;
-      if ((error as any).code === 'ERR_CANCELED') {
-        return {
-          columns: ['Status'],
-          rows: [['🛑 Query cancelled']],
-          executionTime: 0,
-          rowCount: 0,
-          error: 'Cancelled by user'
-        };
-      }
+      const status = error.response?.status;
+      const msg = error.response?.data?.message || error.message;
+      console.error(`Databricks SQL API Error ${status}:`, error.response?.data);
       
-      // Handle specific Databricks errors
-      if (errorData?.error_code === 'DEADLINE_EXCEEDED' || error.code === 'ECONNABORTED') {
-        console.warn('Query timed out - warehouse may be starting up or query is too complex');
-        return {
-          columns: ['Status'],
-          rows: [['⏳ Query timed out. Try simplifying the query or wait for warehouse to fully start.']],
-          executionTime: 0,
-          rowCount: 1,
-          error: 'Query timeout - try a simpler query or wait for warehouse startup'
-        };
-      }
-      
-      if (errorData?.error_code === 'RESOURCE_DOES_NOT_EXIST') {
-        return {
-          columns: ['Error'],
-          rows: [['❌ SQL Warehouse not found. Please check your warehouse configuration.']],
-          executionTime: 0,
-          rowCount: 1,
-          error: 'Warehouse not found'
-        };
-      }
-      
-      if (errorData?.error_code) {
-        return {
-          columns: ['Error'],
-          rows: [[`❌ Databricks Error: ${errorData.error_code} - ${errorData.message || 'Unknown error'}`]],
-          executionTime: 0,
-          rowCount: 1,
-          error: errorData.error_code
-        };
-      }
-      
-      // Do not return mock data; surface actual error for clarity
-    }
-    
-    // Generic error fallback
-    let errorMessage = 'Unknown error';
-    if (axios.isAxiosError(error)) {
-      errorMessage = error.response?.data?.message || error.response?.statusText || error.message;
-    } else if (error instanceof Error) {
-      errorMessage = error.message;
+      return {
+        columns: ['Error'],
+        rows: [[`Query failed (${status}): ${msg}`]],
+        executionTime: 0,
+        rowCount: 1,
+        error: `Databricks API error: ${msg}`
+      };
     }
     
     return {
       columns: ['Error'],
-      rows: [[`❌ Query failed: ${errorMessage}`]],
+      rows: [[error.message || 'Unknown error occurred']],
       executionTime: 0,
       rowCount: 1,
-      error: errorMessage
+      error: error.message || 'Unknown error'
     };
   }
 }
