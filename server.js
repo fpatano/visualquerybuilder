@@ -342,6 +342,41 @@ router.post('/api/warehouse/test', async (req, res) => {
   }
 });
 
+// Test Unity Catalog endpoint
+router.get('/api/test/unity-catalog', async (req, res) => {
+  try {
+    // Get user token for authentication
+    const userToken = getUserToken(req);
+    const host = getDatabricksHost();
+    
+    const client = axios.create({
+      baseURL: `${host}/api`,
+      headers: { Authorization: `Bearer ${userToken}` },
+      timeout: 10000,
+    });
+    
+    console.log('🧪 Testing Unity Catalog endpoint /api/2.1/unity-catalog/catalogs');
+    const response = await client.get('/2.1/unity-catalog/catalogs');
+    
+    res.json({
+      success: true,
+      status: response.status,
+      message: 'Unity Catalog endpoint test successful',
+      catalogCount: response.data.catalogs?.length || 0,
+      catalogs: response.data.catalogs?.map(c => c.name) || []
+    });
+  } catch (error) {
+    console.error('Unity Catalog test failed:', error.message);
+    res.status(500).json({ 
+      success: false,
+      error: 'Unity Catalog test failed',
+      message: error.message,
+      status: error.response?.status,
+      details: error.response?.data
+    });
+  }
+});
+
 // Direct SQL endpoint using user authentication
 router.post('/api/databricks/2.0/sql/statements', async (req, res) => {
   try {
@@ -380,7 +415,7 @@ router.post('/api/databricks/2.0/sql/statements', async (req, res) => {
 
 // API proxy for other Databricks calls (Unity Catalog, etc.)
 router.use('/api/databricks', createProxyMiddleware({
-  target: `https://${getDatabricksHost() || process.env.DATABRICKS_SERVER_HOSTNAME}`,
+  target: `https://${process.env.DATABRICKS_SERVER_HOSTNAME}`,
   changeOrigin: true,
   secure: true,
   timeout: 120000, // 2 minutes for SQL queries
@@ -393,16 +428,16 @@ router.use('/api/databricks', createProxyMiddleware({
   },
   onProxyReq: (proxyReq, req, res) => {
     try {
-      const targetHost = getDatabricksHost() || process.env.DATABRICKS_SERVER_HOSTNAME;
-      // Build full target URL for easier debug output
-      const resolvedTarget = `https://${targetHost}`;
-
-      // Read user token forwarded by Databricks Apps
+      const resolvedTarget = `https://${process.env.DATABRICKS_SERVER_HOSTNAME}`;
+      
+      // ALWAYS authenticate with forwarded user token
       const forwardedToken = req.header('x-forwarded-access-token');
-      const authHeaderPresent = !!forwardedToken;
+      
+      // Pass check logging (must log for verification)
+      console.log(`Resolved target: ${resolvedTarget}`);
+      console.log(`Auth header present: ${!!forwardedToken}`);
 
-      // REQUIRED: We must have the forwarded token for every upstream request when running as an App
-      if (!authHeaderPresent) {
+      if (!forwardedToken) {
         console.error(`[PROXY] Missing x-forwarded-access-token for request ${req.method} ${req.path}`);
         if (!res.headersSent) {
           return res.status(401).json({
@@ -414,11 +449,8 @@ router.use('/api/databricks', createProxyMiddleware({
         return;
       }
 
-      // Inject Authorization header for Databricks API
+      // Set Authorization header for EVERY upstream request
       proxyReq.setHeader('Authorization', `Bearer ${forwardedToken}`);
-
-      // Verification logging (one line per upstream call)
-      console.log(`[PROXY VERIFY] → ${resolvedTarget}  |  Auth header present: ${authHeaderPresent}`);
 
       // Forward possible organisation header for completeness
       const orgId = req.header('x-databricks-org-id');
@@ -428,7 +460,6 @@ router.use('/api/databricks', createProxyMiddleware({
     } catch (error) {
       console.error(`[PROXY] Authentication failed for ${req.path}:`, error.message);
       
-      // Return a proper error response instead of letting the proxy crash
       if (!res.headersSent) {
         res.status(401).json({ 
           error: 'Authentication failed', 

@@ -92,15 +92,16 @@ export function isDatabricksApps() {
  * Get appropriate Databricks host for the environment
  */
 export function getDatabricksHost() {
-  // In Databricks Apps, use the server hostname
+  // In Databricks Apps, use the server hostname WITH protocol
   if (process.env.DATABRICKS_SERVER_HOSTNAME) {
-    return process.env.DATABRICKS_SERVER_HOSTNAME;
+    return `https://${process.env.DATABRICKS_SERVER_HOSTNAME}`;
   }
   
-  // Local development, use the configured host (remove https:// if present)
+  // Local development, use the configured host (ensure it has protocol)
   const host = process.env.DATABRICKS_HOST;
   if (host) {
-    return host.replace(/^https?:\/\//, '');
+    // Ensure it has a protocol
+    return host.startsWith('http') ? host : `https://${host}`;
   }
   
   return null;

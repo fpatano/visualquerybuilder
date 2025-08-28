@@ -30,3 +30,5 @@ config:
   # Enable proper authentication context
   auth:
     type: workspace
+    oauth_scopes:
+      - sql

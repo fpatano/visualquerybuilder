@@ -11,14 +11,22 @@ import { getUserToken, getDatabricksHost, getDatabricksHttpPath } from './auth-u
  */
 export async function createConnection(req) {
   try {
-    // For Databricks Apps: use forwarded token, for local dev: use env token
-    const forwardedToken = req.header('x-forwarded-access-token');
-    const userToken = forwardedToken || getUserToken(req);
+    // ALWAYS use forwarded access token for on-behalf-of-user auth in Apps
+    const userToken = getUserToken(req);
     const host = getDatabricksHost();
     const path = getDatabricksHttpPath();
     
-    console.log(`🔌 Creating connection to ${host}${path}`);
-    console.log(`🔑 Using ${forwardedToken ? 'forwarded user token' : 'environment token'} for authentication`);
+    // Pass check logging (startup log)
+    console.log(`🔌 DB Driver using host: ${host}`);
+    console.log(`🔌 DB Driver using HTTP path: ${path}`);
+    
+    if (!host || !path) {
+      throw new Error('Missing host or HTTP path configuration');
+    }
+    
+    console.log(`🔑 Using on-behalf-of-user token  |  Auth header present: ${!!userToken}`);
+    // For debug: log the first 10 characters so we can correlate requests without leaking the full token
+    console.log(`🔑 Token prefix: ${userToken?.substring(0, 10) || 'N/A'}…`);
     
     const client = new DBSQLClient();
     

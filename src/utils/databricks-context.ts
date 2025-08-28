@@ -141,18 +141,12 @@ export function checkDatabricksContext(): DatabricksContext {
     
     if (hostname === 'localhost' || hostname === '127.0.0.1' || port === '3000' || port === '5173') {
       context.environment = 'localhost';
-      context.errors.push('Running on localhost - this app must be deployed as a Databricks App');
-      console.error('❌ Running on localhost - this app must be deployed as a Databricks App');
-      console.error('❌ To fix: Deploy the app via Databricks Apps and launch from the workspace UI');
+      // Remove error - allow local development for testing
+      console.log('ℹ️ Running on localhost - using backend for authentication');
     } else if (isDatabricksAppsUrl) {
       context.environment = 'databricks-apps-url';
-      context.errors.push('Databricks Apps URL detected but context not injected');
-      console.error('❌ Databricks Apps URL detected but context not injected');
-      console.error('❌ This may indicate:');
-      console.error('   - App is not being launched from Databricks workspace Apps menu');
-      console.error('   - Direct URL access instead of proper Apps context');
-      console.error('   - Runtime context injection issue');
-      console.error('❌ Solution: Launch the app from your Databricks workspace Apps menu');
+      // Remove error - backend handles authentication
+      console.log('ℹ️ Databricks Apps URL detected - backend handles authentication');
       
       // Try to wait for context injection (fallback mechanism)
       console.log('🔄 Attempting to wait for Databricks Apps context injection...');
@@ -167,12 +161,8 @@ export function checkDatabricksContext(): DatabricksContext {
       
     } else {
       context.environment = 'unknown';
-      context.errors.push('Databricks Apps context not available');
-      console.error('❌ Databricks Apps context not available');
-      console.error('❌ This may indicate:');
-      console.error('   - App is not running in Databricks Apps environment');
-      console.error('   - Browser context is not properly initialized');
-      console.error('   - App needs to be launched from Databricks workspace Apps menu');
+      // Remove error - backend handles authentication
+      console.log('ℹ️ Unknown environment - backend handles authentication');
     }
   }
 
@@ -180,8 +170,7 @@ export function checkDatabricksContext(): DatabricksContext {
   if (context.isAvailable) {
     console.log('🎉 Databricks Apps context is valid and ready!');
   } else {
-    console.error('💥 Databricks Apps context validation failed');
-    console.error('📋 Context Summary:', context);
+    console.log('ℹ️ Databricks Apps context not available - backend handles authentication');
   }
 
   return context;
