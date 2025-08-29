@@ -71,6 +71,9 @@ export async function generateAISummary(
   try {
     const queryHash = generateQueryHash(queryText);
     
+    console.log('🤖 Generating AI summary for query:', queryText.substring(0, 100) + '...');
+    console.log('📊 Metadata:', metadata);
+    
     const aiQuery = `
       SELECT ai_query(
         'databricks-meta-llama-3-3-70b-instruct',
@@ -86,28 +89,66 @@ export async function generateAISummary(
       ) as ai_summary
     `;
     
+    console.log('🤖 Executing AI query:', aiQuery);
+    
     const result = await executeDatabricksQuery(aiQuery);
+    
+    console.log('🤖 AI query result received:', result);
+    console.log('🤖 Result columns:', result.columns);
+    console.log('🤖 Result rows:', result.rows);
+    console.log('🤖 Result error:', result.error);
+    
+    // Check if there was an error in the query execution
+    if (result.error) {
+      console.error('🤖 Query execution failed with error:', result.error);
+      throw new Error(`AI query execution failed: ${result.error}`);
+    }
     
     // Find the ai_summary column index
     const aiSummaryColumnIndex = result.columns.findIndex(col => col === 'ai_summary');
-    const summary = aiSummaryColumnIndex >= 0 && result.rows?.[0]?.[aiSummaryColumnIndex] 
-      ? String(result.rows[0][aiSummaryColumnIndex])
-      : 'Unable to generate summary';
+    console.log('🤖 AI summary column index:', aiSummaryColumnIndex);
+    
+    if (aiSummaryColumnIndex === -1) {
+      console.error('🤖 ai_summary column not found in result. Available columns:', result.columns);
+      throw new Error('AI summary column not found in result');
+    }
+    
+    if (!result.rows || result.rows.length === 0) {
+      console.error('🤖 No rows returned from AI query');
+      throw new Error('No rows returned from AI query');
+    }
+    
+    const summary = result.rows[0]?.[aiSummaryColumnIndex];
+    console.log('🤖 Raw summary value:', summary);
+    
+    if (!summary) {
+      console.error('🤖 Summary value is null/undefined');
+      throw new Error('Summary value is null/undefined');
+    }
+    
+    const summaryText = String(summary);
+    console.log('🤖 Final summary text:', summaryText);
     
     return {
-      summary,
+      summary: summaryText,
       metadata,
       timestamp: Date.now(),
       queryHash
     };
     
   } catch (error) {
-    const { message, emoji } = getRandomFunnyError();
-    throw {
-      error: error instanceof Error ? error.message : 'Unknown error',
-      funnyMessage: message,
-      robotEmoji: emoji
-    } as AISummaryError;
+    console.error('🤖 AI summary generation failed:', error);
+    
+    // Generate fallback summary on any error
+    const fallbackSummary = generateFallbackSummary(queryText, metadata);
+    console.log('🤖 Using fallback summary due to error:', fallbackSummary);
+    
+    return {
+      summary: fallbackSummary,
+      metadata,
+      timestamp: Date.now(),
+      queryHash: generateQueryHash(queryText)
+    };
   }
 }
 
