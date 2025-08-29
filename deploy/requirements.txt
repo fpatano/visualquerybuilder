@@ -1,5 +1,0 @@
-# Python dependencies for Visual SQL Query Builder
-# Note: This is a Node.js app, but Databricks Apps may require this file
-
-# No Python packages required for this Node.js application
-# The app uses npm packages defined in package.json

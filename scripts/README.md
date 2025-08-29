@@ -1,6 +1,6 @@
 # Visual Query Builder - Development Scripts
 
-These scripts help you manage the development environment, especially useful after computer sleeps or when you need a fresh start.
+These scripts help you manage the development environment locally. For production deployment, see the main README.md for CI/CD instructions.
 
 ## Quick Commands
 
@@ -13,11 +13,11 @@ Complete clean + rebuild + start. Use this when:
 - Servers seem stuck or unresponsive
 - You want a completely clean environment
 
-### 🚀 Start Servers
+### 🚀 Start Development Server
 ```bash
 ./scripts/start.sh
 ```
-Start both backend (port 3000) and frontend (port 5173) servers.
+Start the development server (port 5173).
 
 ### 🛑 Stop Servers
 ```bash
@@ -54,7 +54,7 @@ Install dependencies and build the project.
 
 2. **Normal development:**
    ```bash
-   ./scripts/start.sh    # Start servers
+   ./scripts/start.sh    # Start development server
    # ... do your work ...
    ./scripts/stop.sh     # Stop when done
    ```
@@ -74,7 +74,7 @@ Install dependencies and build the project.
 
 - **clean.sh**: Kills processes, removes node_modules, clears build artifacts
 - **rebuild.sh**: Fresh npm install and build
-- **start.sh**: Starts both servers with health checks
+- **start.sh**: Starts development server with health checks
 - **stop.sh**: Gracefully stops all servers
 - **logs.sh**: Shows server status and logs
 - **fresh-start.sh**: Runs clean → rebuild → start in sequence
@@ -82,32 +82,14 @@ Install dependencies and build the project.
 ## Access URLs
 
 - **Frontend**: http://localhost:5173
-- **Backend**: http://localhost:3000
-- **Health Check**: http://localhost:3000/health
-- **Authentication Test**: http://localhost:3000/api/whoami
+- **Health Check**: http://localhost:8000/health (when running production server)
 
-## 🔐 Authentication Setup
+## 🚀 Production Deployment
 
-### First Time Setup
-1. **Copy environment template:**
-   ```bash
-   cp ../env.example ../.env
-   ```
+**This app is now deployed via CI/CD!** 
 
-2. **Configure your .env file:**
-   ```bash
-   # Edit .env with your Databricks credentials
-   DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
-   DATABRICKS_TOKEN=your-personal-access-token
-   DATABRICKS_WAREHOUSE_ID=your-warehouse-id
-   ```
+- **Local development**: Use the scripts above
+- **Production deployment**: Push to main branch, CI/CD handles the rest
+- **See main README.md** for full deployment instructions
 
-3. **Test authentication:**
-   ```bash
-   npm run test:auth
-   ```
-
-### Troubleshooting Authentication
-- **"DATABRICKS_TOKEN required"**: Add your token to .env file
-- **"No access token found"**: Check your .env configuration
-- **"Database connection failed"**: Verify warehouse is running and token is valid
+No more manual deployment scripts needed! 🎉
