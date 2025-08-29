@@ -37,11 +37,74 @@ export async function getWarehouseId(): Promise<string> {
 
 async function ensureWarehouseRunning(): Promise<boolean> {
   try {
-    const response = await fetch('/api/warehouse/status', { method: 'POST' });
-    const result = await response.json();
-    return result.status === 'RUNNING';
+    // First check current status
+    const statusResponse = await fetch('/api/warehouse/status', { method: 'POST' });
+    const statusResult = await statusResponse.json();
+    
+    console.log(`🔍 Warehouse status: ${statusResult.status}`);
+    
+    if (statusResult.status === 'RUNNING') {
+      console.log('✅ Warehouse is already running');
+      return true;
+    }
+    
+    if (statusResult.status === 'STOPPED' || statusResult.status === 'STOPPING') {
+      console.log('🚀 Starting warehouse...');
+      
+      // Start the warehouse
+      const startResponse = await fetch('/api/warehouse/start', { method: 'POST' });
+      const startResult = await startResponse.json();
+      
+      if (!startResult.success) {
+        console.error('❌ Failed to start warehouse:', startResult.error);
+        return false;
+      }
+      
+      console.log('⏳ Warehouse starting, waiting for it to be ready...');
+      
+      // Wait for warehouse to be ready
+      const waitResponse = await fetch('/api/warehouse/wait-ready', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timeout: 300 }) // 5 minutes timeout
+      });
+      
+      const waitResult = await waitResponse.json();
+      
+      if (waitResult.success && waitResult.status === 'RUNNING') {
+        console.log(`✅ Warehouse is now ready! (waited ${waitResult.waitTime}ms)`);
+        return true;
+      } else {
+        console.error('❌ Warehouse failed to become ready:', waitResult.error);
+        return false;
+      }
+    }
+    
+    if (statusResult.status === 'STARTING') {
+      console.log('⏳ Warehouse is starting, waiting for it to be ready...');
+      
+      // Wait for warehouse to be ready
+      const waitResponse = await fetch('/api/warehouse/wait-ready', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timeout: 300 }) // 5 minutes timeout
+      });
+      
+      const waitResult = await waitResponse.json();
+      
+      if (waitResult.success && waitResult.status === 'RUNNING') {
+        console.log(`✅ Warehouse is now ready! (waited ${waitResult.waitTime}ms)`);
+        return true;
+      } else {
+        console.error('❌ Warehouse failed to become ready:', waitResult.error);
+        return false;
+      }
+    }
+    
+    console.log(`⚠️ Warehouse status: ${statusResult.status} - cannot auto-start`);
+    return false;
   } catch (error) {
-    console.error('❌ Failed to check warehouse status:', error);
+    console.error('❌ Failed to check/start warehouse:', error);
     return false;
   }
 }

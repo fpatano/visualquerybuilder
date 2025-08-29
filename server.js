@@ -107,6 +107,7 @@ app.post('/api/warehouse/status', async (req, res) => {
       return;
     }
 
+    // Databricks Apps - use forwarded user token
     const userToken = getUserToken(req);
     const host = getDatabricksHost();
     
@@ -134,6 +135,176 @@ app.post('/api/warehouse/status', async (req, res) => {
       status: 'UNKNOWN', 
       message: 'Unable to determine warehouse status',
       error: error.message
+    });
+  }
+});
+
+// Auto-start warehouse endpoint
+app.post('/api/warehouse/start', async (req, res) => {
+  try {
+    if (!req.isDatabricksApps) {
+      // Local development - use personal access token
+      const localToken = process.env.DATABRICKS_TOKEN;
+      if (!localToken) {
+        return res.status(500).json({ error: 'DATABRICKS_TOKEN required for local development' });
+      }
+      
+      const host = process.env.DATABRICKS_HOST;
+      if (!host) {
+        return res.status(500).json({ error: 'DATABRICKS_HOST required for local development' });
+      }
+      
+      // Start the warehouse
+      const response = await fetch(`${host}/api/2.0/sql/warehouses/${process.env.DATABRICKS_WAREHOUSE_ID}/start`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`Failed to start warehouse: ${response.status} - ${errorData.message || 'Unknown error'}`);
+      }
+
+      res.json({ 
+        success: true,
+        message: 'Warehouse start command sent successfully',
+        status: 'STARTING'
+      });
+      return;
+    }
+
+    // Databricks Apps - use forwarded user token
+    const userToken = getUserToken(req);
+    const host = getDatabricksHost();
+    
+    // Start the warehouse
+    const response = await fetch(`${host}/api/2.0/sql/warehouses/${process.env.DATABRICKS_WAREHOUSE_ID}/start`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${userToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Failed to start warehouse: ${response.status} - ${errorData.message || 'Unknown error'}`);
+    }
+
+    res.json({ 
+      success: true,
+      message: 'Warehouse start command sent successfully',
+      status: 'STARTING'
+    });
+  } catch (error) {
+    console.error('Failed to start warehouse:', error);
+    res.status(500).json({ 
+      error: 'Failed to start warehouse',
+      message: error.message 
+    });
+  }
+});
+
+// Wait for warehouse to be ready endpoint
+app.post('/api/warehouse/wait-ready', async (req, res) => {
+  try {
+    const { timeout = 300 } = req.body; // Default 5 minutes timeout
+    const startTime = Date.now();
+    
+    if (!req.isDatabricksApps) {
+      // Local development - use personal access token
+      const localToken = process.env.DATABRICKS_TOKEN;
+      if (!localToken) {
+        return res.status(500).json({ error: 'DATABRICKS_TOKEN required for local development' });
+      }
+      
+      const host = process.env.DATABRICKS_HOST;
+      if (!host) {
+        return res.status(500).json({ error: 'DATABRICKS_HOST required for local development' });
+      }
+      
+      // Poll warehouse status until ready
+      while (Date.now() - startTime < timeout * 1000) {
+        const response = await fetch(`${host}/api/2.0/sql/warehouses/${process.env.DATABRICKS_WAREHOUSE_ID}`, {
+          headers: {
+            'Authorization': `Bearer ${localToken}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`Warehouse status check failed: ${response.status}`);
+        }
+
+        const warehouse = await response.json();
+        
+        if (warehouse.state === 'RUNNING') {
+          return res.json({ 
+            success: true,
+            status: 'RUNNING',
+            message: `Warehouse ${warehouse.name} is ready`,
+            warehouse: warehouse,
+            waitTime: Date.now() - startTime
+          });
+        }
+        
+        if (warehouse.state === 'STOPPED' || warehouse.state === 'FAILED') {
+          throw new Error(`Warehouse failed to start: ${warehouse.state}`);
+        }
+        
+        // Wait 5 seconds before next check
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
+      
+      throw new Error(`Warehouse did not become ready within ${timeout} seconds`);
+    }
+
+    // Databricks Apps - use forwarded user token
+    const userToken = getUserToken(req);
+    const host = getDatabricksHost();
+    
+    // Poll warehouse status until ready
+    while (Date.now() - startTime < timeout * 1000) {
+      const response = await fetch(`${host}/api/2.0/sql/warehouses/${process.env.DATABRICKS_WAREHOUSE_ID}`, {
+        headers: {
+          'Authorization': `Bearer ${userToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Warehouse status check failed: ${response.status}`);
+      }
+
+      const warehouse = await response.json();
+      
+      if (warehouse.state === 'RUNNING') {
+        return res.json({ 
+          success: true,
+          status: 'RUNNING',
+          message: `Warehouse ${warehouse.name} is ready`,
+          warehouse: warehouse,
+          waitTime: Date.now() - startTime
+        });
+      }
+      
+      if (warehouse.state === 'STOPPED' || warehouse.state === 'FAILED') {
+        throw new Error(`Warehouse failed to start: ${warehouse.state}`);
+      }
+      
+      // Wait 5 seconds before next check
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
+    
+    throw new Error(`Warehouse did not become ready within ${timeout} seconds`);
+  } catch (error) {
+    console.error('Failed to wait for warehouse:', error);
+    res.status(500).json({ 
+      error: 'Failed to wait for warehouse',
+      message: error.message 
     });
   }
 });
