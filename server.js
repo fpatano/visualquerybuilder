@@ -59,8 +59,52 @@ app.get('/api/warehouse/test', (req, res) => {
   });
 });
 
+// Unity Catalog API endpoints
+app.get('/api/unity-catalog/catalogs', (req, res) => {
+  // Mock response for now - you'll need to implement actual Databricks API calls
+  res.json({
+    catalogs: [
+      { name: 'default', comment: 'Default catalog' },
+      { name: 'hive_metastore', comment: 'Hive metastore catalog' }
+    ]
+  });
+});
+
+app.get('/api/unity-catalog/schemas', (req, res) => {
+  const { catalog_name } = req.query;
+  res.json({
+    schemas: [
+      { name: 'default', comment: 'Default schema' },
+      { name: 'information_schema', comment: 'Information schema' }
+    ]
+  });
+});
+
+app.get('/api/unity-catalog/tables', (req, res) => {
+  const { catalog_name, schema_name } = req.query;
+  res.json({
+    tables: [
+      { name: 'sample_table', comment: 'Sample table' }
+    ]
+  });
+});
+
+app.get('/api/unity-catalog/columns', (req, res) => {
+  const { catalog_name, schema_name, table_name } = req.query;
+  res.json({
+    columns: [
+      { name: 'id', type_text: 'INT', comment: 'Primary key' },
+      { name: 'name', type_text: 'STRING', comment: 'Name field' }
+    ]
+  });
+});
+
 // Serve the React app for all other routes (SPA routing) - Updated for Databricks Apps deployment
 app.get('*', (req, res) => {
+  // Don't serve React app for API routes
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'API endpoint not found' });
+  }
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
