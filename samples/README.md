@@ -1,23 +1,20 @@
 # TPC-DS Sample Queries for Visual SQL Query Builder
 
-This directory contains carefully curated sample SQL queries from the TPC-DS benchmark dataset that showcase the capabilities of the Visual SQL Query Builder. All queries use the `samples.tpcds_sf1` schema which is available in every Databricks workspace.
+This directory contains **3 carefully curated sample SQL queries** from the TPC-DS benchmark dataset that showcase the capabilities of the Visual SQL Query Builder. All queries are designed to render beautifully in the visual interface and use the `samples.tpcds_sf1` schema available in every Databricks workspace.
 
 ## 🎯 **Query Complexity Levels**
 
-### 🌱 **Beginner (1-2 tables)**
+### 🌱 **Beginner (2 tables)**
 - **01_customer_demographics.sql** - Simple customer analysis
 - Perfect for learning basic JOINs and WHERE clauses
 
-### 🌿 **Intermediate (3-4 tables)**
+### 🌿 **Intermediate (3 tables)**
 - **02_store_sales_performance.sql** - Store performance analysis
-- **03_customer_purchase_journey.sql** - Customer purchase patterns
-- **06_time_based_sales_trends.sql** - Temporal sales analysis
+- Demonstrates multiple JOINs and aggregations
 
-### 🌳 **Advanced (5-6 tables)**
-- **04_multi_channel_sales.sql** - Cross-channel comparison
-- **05_inventory_sales_correlation.sql** - Inventory analysis
-- **07_customer_segmentation.sql** - Customer analytics
-- **08_promotion_effectiveness.sql** - Marketing ROI analysis
+### 🌳 **Advanced (4 tables)**
+- **03_customer_purchase_journey.sql** - Customer purchase patterns
+- Shows complex business logic with multiple dimensions
 
 ## 📊 **Sample Queries Overview**
 
@@ -27,6 +24,7 @@ This directory contains carefully curated sample SQL queries from the TPC-DS ben
 - **Demonstrates**: Basic INNER JOIN, WHERE filtering, column selection
 - **Business Value**: Customer characteristic analysis
 - **Visual Elements**: Simple 2-table join with clear relationships
+- **Expected Results**: ~50-100 rows of customer profiles
 
 ### 2. **Store Sales Performance**
 **File**: `02_store_sales_performance.sql`
@@ -34,48 +32,15 @@ This directory contains carefully curated sample SQL queries from the TPC-DS ben
 - **Demonstrates**: Multiple JOINs, aggregations, GROUP BY
 - **Business Value**: Store performance by product category
 - **Visual Elements**: 3-table star schema with aggregations
+- **Expected Results**: ~100 rows of store performance metrics
 
 ### 3. **Customer Purchase Journey**
 **File**: `03_customer_purchase_journey.sql`
-- **Tables**: 4 (customer, customer_address, store_sales, store_returns)
-- **Demonstrates**: Complex business logic, LEFT JOINs, subqueries
-- **Business Value**: Customer purchase patterns and returns
-- **Visual Elements**: Customer journey flow with optional returns
-
-### 4. **Multi-Channel Sales Analysis**
-**File**: `04_multi_channel_sales.sql`
-- **Tables**: 5 (store_sales, store, item, date_dim, customer + web_sales, web_site)
-- **Demonstrates**: Complex analytics, multiple data sources, UNION logic
-- **Business Value**: Cross-channel performance comparison
-- **Visual Elements**: Parallel channel analysis with shared dimensions
-
-### 5. **Inventory and Sales Correlation**
-**File**: `05_inventory_sales_correlation.sql`
-- **Tables**: 6 (item, inventory, warehouse, store_sales, web_sales, date_dim)
-- **Demonstrates**: Complex business intelligence, multiple dimensions
-- **Business Value**: Inventory-sales correlation analysis
-- **Visual Elements**: Multi-dimensional analysis with inventory tracking
-
-### 6. **Time-Based Sales Trends**
-**File**: `06_time_based_sales_trends.sql`
-- **Tables**: 4 (date_dim, store_sales, item, web_sales)
-- **Demonstrates**: Temporal analytics, seasonal analysis, trend identification
-- **Business Value**: Seasonal sales pattern analysis
-- **Visual Elements**: Time-based analysis with seasonal patterns
-
-### 7. **Customer Segmentation Analysis**
-**File**: `07_customer_segmentation.sql`
-- **Tables**: 5 (customer, customer_demographics, household_demographics, customer_address, store_sales, web_sales)
-- **Demonstrates**: Customer analytics, segmentation, behavioral analysis
-- **Business Value**: Customer value segmentation
-- **Visual Elements**: Customer profiling with behavioral analysis
-
-### 8. **Promotion Effectiveness Analysis**
-**File**: `08_promotion_effectiveness.sql`
-- **Tables**: 4 (promotion, date_dim, store_sales, item, web_sales)
-- **Demonstrates**: Marketing analytics, ROI analysis, promotional impact
-- **Business Value**: Promotion performance and ROI measurement
-- **Visual Elements**: Marketing campaign analysis with ROI calculation
+- **Tables**: 4 (customer, customer_address, store_sales, item)
+- **Demonstrates**: Complex business logic, multiple JOINs, aggregations
+- **Business Value**: Customer purchase patterns and location analysis
+- **Visual Elements**: Customer journey flow with location and purchase data
+- **Expected Results**: ~100 rows of customer purchase insights
 
 ## 🚀 **How to Use These Samples**
 
@@ -87,43 +52,41 @@ This directory contains carefully curated sample SQL queries from the TPC-DS ben
 5. Click "Sync to Canvas" to visualize the query structure
 
 ### **Learning Path**
-1. **Start with**: `01_customer_demographics.sql` (beginner)
-2. **Progress to**: `02_store_sales_performance.sql` (intermediate)
-3. **Advance to**: `04_multi_channel_sales.sql` (advanced)
-4. **Master with**: `05_inventory_sales_correlation.sql` (expert)
+1. **Start with**: `01_customer_demographics.sql` (2 tables)
+2. **Progress to**: `02_store_sales_performance.sql` (3 tables)
+3. **Master with**: `03_customer_purchase_journey.sql` (4 tables)
 
 ### **Customization Tips**
 - Modify the `LIMIT` clauses to adjust result set sizes
 - Change date ranges in WHERE clauses for different time periods
 - Adjust category filters in the `i.i_category IN (...)` clauses
-- Modify customer segment thresholds in CASE statements
+- Modify customer thresholds in HAVING clauses
 
 ## 🔍 **What Each Query Demonstrates**
 
 ### **Join Types**
-- **INNER JOIN**: Primary relationships (customer → sales)
-- **LEFT JOIN**: Optional relationships (sales → returns)
-- **Multiple JOINs**: Complex business scenarios
+- **INNER JOIN**: Primary relationships (customer → demographics)
+- **Multiple JOINs**: Progressive complexity (2 → 3 → 4 tables)
+- **Clear Relationships**: Well-defined foreign key relationships
 
 ### **Analytical Functions**
 - **Aggregations**: SUM, COUNT, AVG for business metrics
 - **Grouping**: GROUP BY for dimensional analysis
 - **Filtering**: WHERE and HAVING for data selection
-- **Conditional Logic**: CASE statements for business rules
+- **Business Logic**: Meaningful business scenarios
 
 ### **Business Scenarios**
-- **Customer Analytics**: Demographics, segmentation, behavior
-- **Sales Analysis**: Performance, trends, channel comparison
-- **Inventory Management**: Stock levels, sales correlation
-- **Marketing ROI**: Promotion effectiveness, campaign analysis
+- **Customer Analytics**: Demographics and characteristics
+- **Sales Analysis**: Store performance and product categories
+- **Customer Journey**: Purchase patterns and location insights
 
 ## 📈 **Expected Results**
 
 Each query is designed to return meaningful business insights:
-- **Customer queries**: 50-200 rows with customer profiles
-- **Sales queries**: 100-500 rows with performance metrics
-- **Analytics queries**: 100-1000 rows with business intelligence
+- **Customer queries**: 50-100 rows with customer profiles
+- **Sales queries**: 100 rows with performance metrics
 - **All queries**: Include proper LIMIT clauses to prevent timeouts
+- **Clean data**: Well-structured results that render beautifully
 
 ## 🎨 **Visual Builder Features Demonstrated**
 
@@ -131,7 +94,7 @@ Each query is designed to return meaningful business insights:
 - **Column Selection**: Meaningful business columns
 - **Filtering Logic**: Business-relevant WHERE conditions
 - **Aggregations**: Business metrics and KPIs
-- **Complex Joins**: Multi-table business scenarios
+- **Progressive Complexity**: From simple to advanced scenarios
 - **Business Logic**: Real-world analytical use cases
 
 ## 🔧 **Technical Notes**
@@ -139,7 +102,18 @@ Each query is designed to return meaningful business insights:
 - **Schema**: All queries use `samples.tpcds_sf1.*` tables
 - **Performance**: Queries include LIMIT clauses for reasonable execution times
 - **Compatibility**: Works with any Databricks workspace (TPC-DS is standard)
-- **Scalability**: Can be modified for larger datasets by adjusting filters
+- **Visualization**: Designed to render clearly in the visual builder
+- **Simplicity**: Focused on clarity over complexity
+
+## 📚 **Why This Approach?**
+
+We've chosen to provide **3 clean, focused queries** instead of many complex ones because:
+
+1. **Better Learning**: Progressive complexity is easier to understand
+2. **Visual Clarity**: Simpler queries render more clearly in the visual builder
+3. **Immediate Success**: Users can see results quickly and understand the flow
+4. **Customization**: Easy to modify and extend for their own needs
+5. **Performance**: Faster execution and better user experience
 
 ## 📚 **Additional Resources**
 
@@ -152,4 +126,4 @@ Each query is designed to return meaningful business insights:
 
 **Happy Query Building! 🚀**
 
-These samples provide a comprehensive foundation for learning and demonstrating the Visual SQL Query Builder's capabilities across various business scenarios and complexity levels.
+These 3 focused samples provide a solid foundation for learning and demonstrating the Visual SQL Query Builder's capabilities across progressive complexity levels.

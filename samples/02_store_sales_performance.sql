@@ -16,7 +16,6 @@ INNER JOIN samples.tpcds_sf1.store s
 INNER JOIN samples.tpcds_sf1.item i
     ON ss.ss_item_sk = i.i_item_sk
 WHERE ss.ss_sold_date_sk >= 2451545  -- Year 2000
-    AND ss.ss_sold_date_sk <= 2451910  -- Year 2001
 GROUP BY s.s_store_name, s.s_store_id, i.i_category, i.i_brand
 ORDER BY total_sales DESC
 LIMIT 100;

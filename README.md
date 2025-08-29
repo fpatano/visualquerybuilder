@@ -10,7 +10,7 @@ A modern, visual SQL query builder application built for Databricks Unity Catalo
 - **Data Profiling**: Comprehensive data analysis and statistics
 - **Results Visualization**: Charts and tables for query results
 - **User Authorization**: Respects Unity Catalog permissions and row-level security
-- **Sample Queries**: 8 curated TPC-DS queries demonstrating various complexity levels
+- **Sample Queries**: 3 curated TPC-DS queries demonstrating progressive complexity
 
 ## Architecture
 
@@ -55,8 +55,8 @@ cat samples/01_customer_demographics.sql
 
 **Sample Query Levels:**
 - 🌱 **Beginner**: 2-table joins (customer demographics)
-- 🌿 **Intermediate**: 3-4 table joins (sales performance, customer journey)  
-- 🌳 **Advanced**: 5-6 table joins (multi-channel analysis, inventory correlation)
+- 🌿 **Intermediate**: 3-table joins (sales performance)  
+- 🌳 **Advanced**: 4-table joins (customer journey analysis)
 
 ### 3. Environment Configuration
 
@@ -219,12 +219,7 @@ src/
 samples/                 # Sample TPC-DS queries
 ├── 01_customer_demographics.sql      # Beginner (2 tables)
 ├── 02_store_sales_performance.sql    # Intermediate (3 tables)
-├── 03_customer_purchase_journey.sql  # Intermediate (4 tables)
-├── 04_multi_channel_sales.sql        # Advanced (5 tables)
-├── 05_inventory_sales_correlation.sql # Advanced (6 tables)
-├── 06_time_based_sales_trends.sql    # Intermediate (4 tables)
-├── 07_customer_segmentation.sql      # Advanced (5 tables)
-└── 08_promotion_effectiveness.sql    # Advanced (4 tables)
+└── 03_customer_purchase_journey.sql  # Advanced (4 tables)
 ```
 
 ### Adding New Features

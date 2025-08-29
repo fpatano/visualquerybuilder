@@ -234,32 +234,34 @@ export class RobustSQLParser {
     };
 
     try {
-      // node-sql-parser returns an AST with specific structure
-      if (ast.type === 'select') {
+      // node-sql-parser returns an AST array with the first element containing the query
+      const queryAst = Array.isArray(ast) ? ast[0] : ast;
+      
+      if (queryAst && queryAst.type === 'select') {
         // Extract tables and joins from FROM clause
-        this.extractTablesAndJoins(ast.from || [], canvasState);
+        this.extractTablesAndJoins(queryAst.from || [], canvasState);
         
         // Extract selected columns
-        this.extractSelectColumns(ast.columns || [], canvasState);
+        this.extractSelectColumns(queryAst.columns || [], canvasState);
         
         // Extract filters from WHERE clause
-        if (ast.where) {
-          this.extractFilters(ast.where, canvasState);
+        if (queryAst.where) {
+          this.extractFilters(queryAst.where, canvasState);
         }
         
         // Extract GROUP BY
-        if (ast.groupby) {
-          this.extractGroupBy(ast.groupby, canvasState);
+        if (queryAst.groupby) {
+          this.extractGroupBy(queryAst.groupby, canvasState);
         }
         
         // Extract ORDER BY
-        if (ast.orderby) {
-          this.extractOrderBy(ast.orderby, canvasState);
+        if (queryAst.orderby) {
+          this.extractOrderBy(queryAst.orderby, canvasState);
         }
         
         // Extract LIMIT
-        if (ast.limit) {
-          this.extractLimit(ast.limit, canvasState);
+        if (queryAst.limit) {
+          this.extractLimit(queryAst.limit, canvasState);
         }
       }
 
