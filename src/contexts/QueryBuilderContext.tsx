@@ -16,6 +16,8 @@ interface QueryBuilderState extends QueryState {
   isLoadingProfile: boolean;
   tableProfiles: Map<string, DataProfile>;
   columnProfiles: Map<string, DataProfile>;
+  sqlWarnings: string[];
+  aiSummary: { summary: string; timestamp: number; queryHash: string } | null;
 }
 
 type QueryBuilderAction = 
@@ -45,7 +47,9 @@ type QueryBuilderAction =
   | { type: 'SET_TABLE_PROFILE'; payload: { tableId: string; profile: DataProfile } }
   | { type: 'SET_COLUMN_PROFILE'; payload: { columnId: string; profile: DataProfile } }
   | { type: 'UPDATE_TABLE_COLUMNS'; payload: { id: string; columns: any[] } }
-  | { type: 'SET_FROM_PARSED_SQL'; payload: { tables: any[]; joins: any[]; selectedColumns: any[] } };
+  | { type: 'SET_FROM_PARSED_SQL'; payload: { tables: any[]; joins: any[]; selectedColumns: any[] } }
+  | { type: 'SET_SQL_WARNINGS'; payload: string[] }
+  | { type: 'SET_AI_SUMMARY'; payload: { summary: string; timestamp: number; queryHash: string } | null };
 
 const initialState: QueryBuilderState = {
   catalog: [],
@@ -65,6 +69,8 @@ const initialState: QueryBuilderState = {
   isLoadingProfile: false,
   tableProfiles: new Map(),
   columnProfiles: new Map(),
+  sqlWarnings: [],
+  aiSummary: null,
 };
 
 function queryBuilderReducer(state: QueryBuilderState, action: QueryBuilderAction): QueryBuilderState {
@@ -191,9 +197,15 @@ function queryBuilderReducer(state: QueryBuilderState, action: QueryBuilderActio
     case 'SET_COLUMN_PROFILE':
       const newColumnProfiles = new Map(state.columnProfiles);
       newColumnProfiles.set(action.payload.columnId, action.payload.profile);
-      return { ...state, columnProfiles: newColumnProfiles };
-    
-    case 'SET_FROM_PARSED_SQL':
+              return { ...state, columnProfiles: newColumnProfiles };
+      
+      case 'SET_SQL_WARNINGS':
+        return { ...state, sqlWarnings: action.payload };
+      
+      case 'SET_AI_SUMMARY':
+        return { ...state, aiSummary: action.payload };
+      
+      case 'SET_FROM_PARSED_SQL':
       // Apply aesthetic spacing to imported tables - ALWAYS use aesthetic spacing for imports
       const tablesWithSpacing = action.payload.tables.map((table: any, index: number) => {
         // Force aesthetic spacing for imported tables to ensure proper layout
@@ -233,6 +245,7 @@ interface QueryBuilderContextType {
   cancelQuery?: () => void;
   loadDataProfile: (table: string, column?: string, mode?: ProfileMode) => Promise<void>;
   applySqlToCanvas: (sql: string) => Promise<void>;
+  generateAISummary: () => Promise<void>;
 }
 
 const QueryBuilderContext = createContext<QueryBuilderContextType | undefined>(undefined);
@@ -1102,6 +1115,14 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
       }
       
       dispatch({ type: 'SET_QUERY_RESULT', payload: result });
+      
+      // Auto-generate AI summary after successful query execution
+      if (!result.error) {
+        // Generate AI summary in background
+        generateAISummary().catch(error => {
+          console.warn('AI summary generation failed:', error);
+        });
+      }
     } catch (error) {
       console.error('Query execution failed:', error);
       dispatch({ 
@@ -1245,8 +1266,46 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
     }
   }, []);
 
+  // Generate AI summary for the current query
+  const generateAISummary = useCallback(async () => {
+    if (!state.sqlQuery.trim() || state.tables.length === 0) {
+      return;
+    }
+
+    try {
+      // Import the AI summary service
+      const { generateAISummary: generateSummary, createQueryMetadata } = await import('../services/aiSummaryService');
+      
+      // Create metadata from current state
+      const metadata = createQueryMetadata(
+        state.tables,
+        state.joins,
+        state.filters,
+        state.aggregations
+      );
+      
+      // Generate AI summary
+      const result = await generateSummary(state.sqlQuery, metadata);
+      
+      // Update state with AI summary
+      dispatch({ 
+        type: 'SET_AI_SUMMARY', 
+        payload: {
+          summary: result.summary,
+          timestamp: result.timestamp,
+          queryHash: result.queryHash
+        }
+      });
+      
+    } catch (error) {
+      console.error('Failed to generate AI summary:', error);
+      // Clear any previous summary on error
+      dispatch({ type: 'SET_AI_SUMMARY', payload: null });
+    }
+  }, [state.sqlQuery, state.tables, state.joins, state.filters, state.aggregations, dispatch]);
+
   return (
-    <QueryBuilderContext.Provider value={{ state, dispatch, executeQuery, cancelQuery, loadDataProfile, applySqlToCanvas }}>
+    <QueryBuilderContext.Provider value={{ state, dispatch, executeQuery, cancelQuery, loadDataProfile, applySqlToCanvas, generateAISummary }}>
       {children}
     </QueryBuilderContext.Provider>
   );
