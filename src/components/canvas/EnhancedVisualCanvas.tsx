@@ -272,6 +272,72 @@ const EnhancedVisualCanvasInner: React.FC = () => {
     }
   }, [state]);
 
+  // Handle drag and drop for tables
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+
+      const reactFlowBounds = event.currentTarget.getBoundingClientRect();
+      const position = {
+        x: event.clientX - reactFlowBounds.left,
+        y: event.clientY - reactFlowBounds.top,
+      };
+
+      try {
+        const catalogItem: any = JSON.parse(
+          event.dataTransfer.getData('application/json')
+        );
+
+        if (catalogItem.type === 'table') {
+          // Parse table information
+          const pathParts = catalogItem.id.split('.');
+          const catalog = pathParts[0];
+          const schema = pathParts[1];
+          const tableName = pathParts[2];
+
+          // Generate clean, readable alias
+          const generateTableAlias = (tableName: string, existingTables: any[]) => {
+            // Start with just the table name
+            let alias = tableName;
+            let counter = 1;
+            
+            // If there's a conflict, add a number
+            while (existingTables.some(t => t.id === alias)) {
+              alias = `${tableName}${counter}`;
+              counter++;
+            }
+            
+            return alias;
+          };
+
+          const newTable = {
+            id: generateTableAlias(tableName, state.tables),
+            name: tableName,
+            schema,
+            catalog,
+            columns: catalogItem.children?.map((col: any) => ({
+              name: col.name,
+              dataType: col.dataType || 'STRING',
+              nullable: col.nullable ?? true,
+              comment: col.comment,
+            })) || [],
+            position,
+          };
+
+          dispatch({ type: 'ADD_TABLE', payload: newTable });
+        }
+      } catch (error) {
+        console.error('Failed to parse dropped item:', error);
+      }
+    },
+    [dispatch, state.tables]
+  );
+
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  }, []);
+
   // Convert query state to React Flow nodes and edges with performance optimizations
   const reactFlowNodes = useMemo(() => {
     const tableNodes: Node[] = state.tables.map(table => ({
@@ -484,6 +550,8 @@ const EnhancedVisualCanvasInner: React.FC = () => {
         onConnect={onConnect}
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
+        onDrop={onDrop}
+        onDragOver={onDragOver}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         connectionLineType={ConnectionLineType.SmoothStep}
