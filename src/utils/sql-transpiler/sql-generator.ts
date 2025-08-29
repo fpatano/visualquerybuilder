@@ -157,19 +157,18 @@ export class SQLGenerator {
       throw new Error('No tables specified in canvas state');
     }
 
-    const tables = canvasState.tables.map(table => {
-      let tableRef = this.formatTableReference(table);
-      
-      if (this.options.useTableAliases) {
-        const alias = this.generateTableAlias(table);
-        this.tableAliases.set(table.id, alias);
-        tableRef += ` AS ${this.quoteIdentifier(alias)}`;
-      }
-      
-      return tableRef;
-    });
-
-    return `FROM ${tables.join(', ')}`;
+    // Only include the main table in FROM clause, not all tables
+    // JOINs will be added separately in generateJoinClause
+    const mainTable = canvasState.tables[0];
+    let tableRef = this.formatTableReference(mainTable);
+    
+    if (this.options.useTableAliases) {
+      const alias = this.generateTableAlias(mainTable);
+      this.tableAliases.set(mainTable.id, alias);
+      tableRef += ` AS ${this.quoteIdentifier(alias)}`;
+    }
+    
+    return `FROM ${tableRef}`;
   }
 
   /**

@@ -387,9 +387,23 @@ export class EnhancedSQLParser {
     }
 
     const columns = canvasState.selectedColumns.map(col => col.column).join(', ') || '*';
-    const tables = canvasState.tables.map(table => table.name).join(', ');
     
-    let sql = `SELECT ${columns} FROM ${tables}`;
+    // Only include the main table in FROM clause, not all tables
+    // JOINs will be added separately
+    const mainTable = canvasState.tables[0];
+    let sql = `SELECT ${columns} FROM ${mainTable.catalog}.${mainTable.schema}.${mainTable.name} AS ${mainTable.id}`;
+    
+    // Add JOIN clauses
+    if (canvasState.joins && canvasState.joins.length > 0) {
+      canvasState.joins.forEach(join => {
+        const targetTable = canvasState.tables.find(t => t.id === join.targetTable);
+        if (targetTable) {
+          const joinType = join.joinType || 'INNER';
+          sql += `\n${joinType} JOIN ${targetTable.catalog}.${targetTable.schema}.${targetTable.name} AS ${targetTable.id}`;
+          sql += ` ON ${join.sourceTable}.${join.sourceColumn} = ${join.targetTable}.${join.targetColumn}`;
+        }
+      });
+    }
     
     if (canvasState.filters.length > 0) {
       const conditions = canvasState.filters.map(f => `${f.column} = '${f.value}'`).join(' AND ');
