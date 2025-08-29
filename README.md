@@ -10,6 +10,7 @@ A modern, visual SQL query builder application built for Databricks Unity Catalo
 - **Data Profiling**: Comprehensive data analysis and statistics
 - **Results Visualization**: Charts and tables for query results
 - **User Authorization**: Respects Unity Catalog permissions and row-level security
+- **Sample Queries**: 8 curated TPC-DS queries demonstrating various complexity levels
 
 ## Architecture
 
@@ -40,7 +41,24 @@ cd visualquerybuilder
 npm install
 ```
 
-### 2. Environment Configuration
+### 2. Try Sample Queries
+
+The repository includes 8 curated TPC-DS sample queries to get you started:
+
+```bash
+# Browse sample queries
+ls samples/*.sql
+
+# Start with beginner queries
+cat samples/01_customer_demographics.sql
+```
+
+**Sample Query Levels:**
+- 🌱 **Beginner**: 2-table joins (customer demographics)
+- 🌿 **Intermediate**: 3-4 table joins (sales performance, customer journey)  
+- 🌳 **Advanced**: 5-6 table joins (multi-channel analysis, inventory correlation)
+
+### 3. Environment Configuration
 
 Copy the environment template and configure your settings:
 
@@ -61,7 +79,7 @@ DATABRICKS_APP_NAME=visual-query-builder
 DATABRICKS_APP_PORT=8000
 ```
 
-### 3. Local Development
+### 4. Local Development
 
 ```bash
 npm run dev
@@ -69,7 +87,7 @@ npm run dev
 
 The application will be available at `http://localhost:5173`
 
-### 4. Build and Deploy
+### 5. Build and Deploy
 
 ```bash
 npm run build
@@ -198,6 +216,15 @@ src/
 ├── services/           # API services
 ├── types/              # TypeScript types
 └── utils/              # Utility functions
+samples/                 # Sample TPC-DS queries
+├── 01_customer_demographics.sql      # Beginner (2 tables)
+├── 02_store_sales_performance.sql    # Intermediate (3 tables)
+├── 03_customer_purchase_journey.sql  # Intermediate (4 tables)
+├── 04_multi_channel_sales.sql        # Advanced (5 tables)
+├── 05_inventory_sales_correlation.sql # Advanced (6 tables)
+├── 06_time_based_sales_trends.sql    # Intermediate (4 tables)
+├── 07_customer_segmentation.sql      # Advanced (5 tables)
+└── 08_promotion_effectiveness.sql    # Advanced (4 tables)
 ```
 
 ### Adding New Features
