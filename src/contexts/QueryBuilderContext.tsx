@@ -12,6 +12,8 @@ interface QueryBuilderState extends QueryState {
   selectedColumn: string | null;
   dataProfile: DataProfile | null;
   isLoadingProfile: boolean;
+  tableProfiles: Map<string, DataProfile>;
+  columnProfiles: Map<string, DataProfile>;
 }
 
 type QueryBuilderAction = 
@@ -38,6 +40,8 @@ type QueryBuilderAction =
   | { type: 'SELECT_COLUMN'; payload: string | null }
   | { type: 'SET_DATA_PROFILE'; payload: DataProfile | null }
   | { type: 'SET_LOADING_PROFILE'; payload: boolean }
+  | { type: 'SET_TABLE_PROFILE'; payload: { tableId: string; profile: DataProfile } }
+  | { type: 'SET_COLUMN_PROFILE'; payload: { columnId: string; profile: DataProfile } }
   | { type: 'UPDATE_TABLE_COLUMNS'; payload: { id: string; columns: any[] } }
   | { type: 'SET_FROM_PARSED_SQL'; payload: { tables: any[]; joins: any[]; selectedColumns: any[] } };
 
@@ -57,6 +61,8 @@ const initialState: QueryBuilderState = {
   selectedColumn: null,
   dataProfile: null,
   isLoadingProfile: false,
+  tableProfiles: new Map(),
+  columnProfiles: new Map(),
 };
 
 function queryBuilderReducer(state: QueryBuilderState, action: QueryBuilderAction): QueryBuilderState {
@@ -174,6 +180,16 @@ function queryBuilderReducer(state: QueryBuilderState, action: QueryBuilderActio
     
     case 'SET_LOADING_PROFILE':
       return { ...state, isLoadingProfile: action.payload };
+    
+    case 'SET_TABLE_PROFILE':
+      const newTableProfiles = new Map(state.tableProfiles);
+      newTableProfiles.set(action.payload.tableId, action.payload.profile);
+      return { ...state, tableProfiles: newTableProfiles };
+    
+    case 'SET_COLUMN_PROFILE':
+      const newColumnProfiles = new Map(state.columnProfiles);
+      newColumnProfiles.set(action.payload.columnId, action.payload.profile);
+      return { ...state, columnProfiles: newColumnProfiles };
     
     case 'SET_FROM_PARSED_SQL':
       // Apply aesthetic spacing to imported tables - ALWAYS use aesthetic spacing for imports
@@ -1136,7 +1152,12 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
       const now = Date.now();
       const ttl = getTtl(mode);
       if (cached && cached.updatedAt && (now - cached.updatedAt) < cached.ttlMs && cached.data) {
-        dispatch({ type: 'SET_DATA_PROFILE', payload: cached.data });
+        // Store in appropriate profile map
+        if (column) {
+          dispatch({ type: 'SET_COLUMN_PROFILE', payload: { columnId: key, profile: cached.data } });
+        } else {
+          dispatch({ type: 'SET_TABLE_PROFILE', payload: { tableId: key, profile: cached.data } });
+        }
         dispatch({ type: 'SET_LOADING_PROFILE', payload: false });
         // Fire background refresh but don't await
         setTimeout(() => loadDataProfile(table, column, mode), 0);
@@ -1147,20 +1168,26 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
       if (inflightRef.current.has(key)) {
         await inflightRef.current.get(key);
         const refreshed = cacheRef.current.get(key)?.data || null;
-        dispatch({ type: 'SET_DATA_PROFILE', payload: refreshed });
+        if (refreshed) {
+          if (column) {
+            dispatch({ type: 'SET_COLUMN_PROFILE', payload: { columnId: key, profile: refreshed } });
+          } else {
+            dispatch({ type: 'SET_TABLE_PROFILE', payload: { tableId: key, profile: refreshed } });
+          }
+        }
         return;
       }
       
       const p = (async () => {
-      if (column) {
-        // Get column profile
-        const columnParts = column.split('.');
-        const columnName = columnParts[columnParts.length - 1]; // Get just the column name
-        console.log(`Loading column profile for: ${catalog}.${schema}.${tableName}.${columnName}`);
-        profile = await getColumnProfile(catalog, schema, tableName, columnName);
-      } else {
-        // Get table profile
-        console.log(`Loading table profile for: ${catalog}.${schema}.${tableName}`);
+        if (column) {
+          // Get column profile
+          const columnParts = column.split('.');
+          const columnName = columnParts[columnParts.length - 1]; // Get just the column name
+          console.log(`Loading column profile for: ${catalog}.${schema}.${tableName}.${columnName}`);
+          profile = await getColumnProfile(catalog, schema, tableName, columnName);
+        } else {
+          // Get table profile
+          console.log(`Loading table profile for: ${catalog}.${schema}.${tableName}`);
           profile = await getTableProfile(catalog, schema, tableName, mode);
         }
         return profile;
@@ -1179,7 +1206,12 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
         ttlMs: ttl
       });
       
-      dispatch({ type: 'SET_DATA_PROFILE', payload: profile });
+      // Store in appropriate profile map
+      if (column) {
+        dispatch({ type: 'SET_COLUMN_PROFILE', payload: { columnId: key, profile } });
+      } else {
+        dispatch({ type: 'SET_TABLE_PROFILE', payload: { tableId: key, profile } });
+      }
     } catch (error) {
       console.error('Failed to load data profile:', error);
       
@@ -1190,10 +1222,18 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
         uniqueCount: 0,
         dataType: column ? 'UNKNOWN' : 'TABLE',
         sampleValues: [`Error loading profile: ${error instanceof Error ? error.message : 'Unknown error'}`],
-        distribution: { 'Error': 1 }
+        metadata: {
+          isApproximate: true,
+          profilingMethod: 'Error fallback'
+        }
       };
       
-      dispatch({ type: 'SET_DATA_PROFILE', payload: errorProfile });
+      // Store error profile in appropriate map
+      if (column) {
+        dispatch({ type: 'SET_COLUMN_PROFILE', payload: { columnId: `${table}::${column}::${mode}`, profile: errorProfile } });
+      } else {
+        dispatch({ type: 'SET_TABLE_PROFILE', payload: { tableId: `${table}::${mode}`, profile: errorProfile } });
+      }
     } finally {
       dispatch({ type: 'SET_LOADING_PROFILE', payload: false });
     }
