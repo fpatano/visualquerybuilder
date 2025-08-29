@@ -3,6 +3,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { DBSQLClient } from '@databricks/sql';
 import { getUserToken, getDatabricksHost, getDatabricksHttpPath, isDatabricksApps } from './src/utils/auth-utils.js';
+import dotenv from 'dotenv';
+
+// Load environment variables from .env file
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,6 +31,9 @@ app.use((req, res, next) => {
   console.log(`🔍 ${req.method} ${req.path}`);
   console.log(`  - Databricks Apps: ${req.isDatabricksApps}`);
   console.log(`  - Headers: ${Object.keys(req.headers).filter(h => h.startsWith('x-forwarded-')).join(', ')}`);
+  console.log(`  - Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`  - DATABRICKS_SERVER_HOSTNAME: ${process.env.DATABRICKS_SERVER_HOSTNAME || 'not set'}`);
+  console.log(`  - DATABRICKS_APP_PORT: ${process.env.DATABRICKS_APP_PORT || 'not set'}`);
   
   next();
 });
@@ -68,7 +75,36 @@ app.get('/api/config', (req, res) => {
 app.post('/api/warehouse/status', async (req, res) => {
   try {
     if (!req.isDatabricksApps) {
-      return res.json({ status: 'RUNNING', message: 'Local development - assuming warehouse is running' });
+      // Local development - use personal access token
+      const localToken = process.env.DATABRICKS_TOKEN;
+      if (!localToken) {
+        return res.json({ status: 'UNKNOWN', message: 'DATABRICKS_TOKEN required for local development' });
+      }
+      
+      const host = process.env.DATABRICKS_HOST;
+      if (!host) {
+        return res.json({ status: 'UNKNOWN', message: 'DATABRICKS_HOST required for local development' });
+      }
+      
+      // Use Databricks REST API to check warehouse status
+      const response = await fetch(`${host}/api/2.0/sql/warehouses/${process.env.DATABRICKS_WAREHOUSE_ID}`, {
+        headers: {
+          'Authorization': `Bearer ${localToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Warehouse status check failed: ${response.status}`);
+      }
+
+      const warehouse = await response.json();
+      res.json({ 
+        status: warehouse.state || 'UNKNOWN',
+        message: `Warehouse ${warehouse.name} is ${warehouse.state}`,
+        warehouse: warehouse
+      });
+      return;
     }
 
     const userToken = getUserToken(req);
@@ -106,13 +142,32 @@ app.post('/api/warehouse/status', async (req, res) => {
 app.get('/api/unity-catalog/catalogs', async (req, res) => {
   try {
     if (!req.isDatabricksApps) {
-      // Mock response for local development
-      return res.json({
-        catalogs: [
-          { name: 'default', comment: 'Default catalog' },
-          { name: 'hive_metastore', comment: 'Hive metastore catalog' }
-        ]
+      // Local development - use personal access token
+      const localToken = process.env.DATABRICKS_TOKEN;
+      if (!localToken) {
+        return res.status(500).json({ error: 'DATABRICKS_TOKEN required for local development' });
+      }
+      
+      const host = process.env.DATABRICKS_HOST;
+      if (!host) {
+        return res.status(500).json({ error: 'DATABRICKS_HOST required for local development' });
+      }
+      
+      // Use Databricks REST API to get catalogs
+      const response = await fetch(`${host}/api/2.1/unity-catalog/catalogs`, {
+        headers: {
+          'Authorization': `Bearer ${localToken}`,
+          'Content-Type': 'application/json'
+        }
       });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch catalogs: ${response.status}`);
+      }
+
+      const data = await response.json();
+      res.json({ catalogs: data.catalogs || [] });
+      return;
     }
 
     const userToken = getUserToken(req);
@@ -150,15 +205,35 @@ app.get('/api/unity-catalog/schemas', async (req, res) => {
     }
 
     if (!req.isDatabricksApps) {
-      // Mock response for local development
-      return res.json({
-        schemas: [
-          { name: 'default', comment: 'Default schema' },
-          { name: 'information_schema', comment: 'Information schema' }
-        ]
+      // Local development - use personal access token
+      const localToken = process.env.DATABRICKS_TOKEN;
+      if (!localToken) {
+        return res.status(500).json({ error: 'DATABRICKS_TOKEN required for local development' });
+      }
+      
+      const host = process.env.DATABRICKS_HOST;
+      if (!host) {
+        return res.status(500).json({ error: 'DATABRICKS_HOST required for local development' });
+      }
+      
+      // Use Databricks REST API to get schemas
+      const response = await fetch(`${host}/api/2.1/unity-catalog/schemas?catalog_name=${catalog_name}`, {
+        headers: {
+          'Authorization': `Bearer ${localToken}`,
+          'Content-Type': 'application/json'
+        }
       });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch schemas: ${response.status}`);
+      }
+
+      const data = await response.json();
+      res.json({ schemas: data.schemas || [] });
+      return;
     }
 
+    // Databricks Apps - use forwarded user token
     const userToken = getUserToken(req);
     const host = getDatabricksHost();
     
@@ -194,12 +269,32 @@ app.get('/api/unity-catalog/tables', async (req, res) => {
     }
 
     if (!req.isDatabricksApps) {
-      // Mock response for local development
-      return res.json({
-        tables: [
-          { name: 'sample_table', comment: 'Sample table' }
-        ]
+      // Local development - use personal access token
+      const localToken = process.env.DATABRICKS_TOKEN;
+      if (!localToken) {
+        return res.status(500).json({ error: 'DATABRICKS_TOKEN required for local development' });
+      }
+      
+      const host = process.env.DATABRICKS_HOST;
+      if (!host) {
+        return res.status(500).json({ error: 'DATABRICKS_HOST required for local development' });
+      }
+      
+      // Use Databricks REST API to get tables
+      const response = await fetch(`${host}/api/2.1/unity-catalog/tables?catalog_name=${catalog_name}&schema_name=${schema_name}`, {
+        headers: {
+          'Authorization': `Bearer ${localToken}`,
+          'Content-Type': 'application/json'
+        }
       });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch tables: ${response.status}`);
+      }
+
+      const data = await response.json();
+      res.json({ tables: data.tables || [] });
+      return;
     }
 
     const userToken = getUserToken(req);
@@ -237,13 +332,70 @@ app.get('/api/unity-catalog/columns', async (req, res) => {
     }
 
     if (!req.isDatabricksApps) {
-      // Mock response for local development
-      return res.json({
-        columns: [
-          { name: 'id', type_text: 'INT', comment: 'Primary key' },
-          { name: 'name', type_text: 'STRING', comment: 'Name field' }
-        ]
+      // Local development - use personal access token
+      const localToken = process.env.DATABRICKS_TOKEN;
+      if (!localToken) {
+        return res.status(500).json({ error: 'DATABRICKS_TOKEN required for local development' });
+      }
+      
+      const host = process.env.DATABRICKS_HOST;
+      if (!host) {
+        return res.status(500).json({ error: 'DATABRICKS_HOST required for local development' });
+      }
+      
+      // Use Databricks REST API to get table metadata
+      const response = await fetch(`${host}/api/2.1/unity-catalog/tables/${catalog_name}.${schema_name}.${table_name}`, {
+        headers: {
+          'Authorization': `Bearer ${localToken}`,
+          'Content-Type': 'application/json'
+        }
       });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch table metadata: ${response.status}`);
+      }
+
+      const table = await response.json();
+      console.log(`📊 Table metadata for ${catalog_name}.${schema_name}.${table_name}:`, JSON.stringify(table, null, 2));
+      
+      // Extract columns from the table schema
+      let columns = [];
+      
+      // Try different possible locations for column information
+      if (table.schema && table.schema.fields) {
+        // Standard schema format
+        columns = table.schema.fields.map(field => ({
+          name: field.name,
+          type_text: field.type,
+          comment: field.metadata?.comment || field.comment || ''
+        }));
+      } else if (table.columns) {
+        // Direct columns array
+        columns = table.columns.map(col => ({
+          name: col.name,
+          type_text: col.type || col.type_text,
+          comment: col.comment || ''
+        }));
+      } else if (table.storage_properties && table.storage_properties.columns) {
+        // Storage properties columns
+        columns = table.storage_properties.columns.map(col => ({
+          name: col.name,
+          type_text: col.type || col.type_text,
+          comment: col.comment || ''
+        }));
+      } else if (table.data_schema && table.data_schema.fields) {
+        // Data schema format
+        columns = table.data_schema.fields.map(field => ({
+          name: field.name,
+          type_text: field.type,
+          comment: field.metadata?.comment || field.comment || ''
+        }));
+      }
+      
+      console.log(`📋 Extracted ${columns.length} columns from table metadata`);
+      
+      res.json({ columns: columns });
+      return;
     }
 
     const userToken = getUserToken(req);
@@ -262,7 +414,43 @@ app.get('/api/unity-catalog/columns', async (req, res) => {
     }
 
     const table = await response.json();
-    const columns = table.storage_properties?.columns || [];
+    console.log(`📊 Table metadata for ${catalog_name}.${schema_name}.${table_name}:`, JSON.stringify(table, null, 2));
+    
+    // Extract columns from the table schema
+    let columns = [];
+    
+    // Try different possible locations for column information
+    if (table.schema && table.schema.fields) {
+      // Standard schema format
+      columns = table.schema.fields.map(field => ({
+        name: field.name,
+        type_text: field.type,
+        comment: field.metadata?.comment || field.comment || ''
+      }));
+    } else if (table.columns) {
+      // Direct columns array
+      columns = table.columns.map(col => ({
+        name: col.name,
+        type_text: col.type || col.type_text,
+        comment: col.comment || ''
+      }));
+    } else if (table.storage_properties && table.storage_properties.columns) {
+      // Storage properties columns
+      columns = table.storage_properties.columns.map(col => ({
+        name: col.name,
+        type_text: col.type || col.type_text,
+        comment: col.comment || ''
+      }));
+    } else if (table.data_schema && table.data_schema.fields) {
+      // Data schema format
+      columns = table.data_schema.fields.map(field => ({
+        name: field.name,
+        type_text: field.type,
+        comment: field.metadata?.comment || field.comment || ''
+      }));
+    }
+    
+    console.log(`📋 Extracted ${columns.length} columns from table metadata`);
     
     res.json({ columns: columns });
   } catch (error) {
@@ -284,7 +472,40 @@ app.post('/api/databricks/2.0/sql/statements', async (req, res) => {
     }
 
     if (!req.isDatabricksApps) {
-      return res.status(400).json({ error: 'SQL execution is only available in Databricks Apps environment' });
+      // Local development - use personal access token
+      const localToken = process.env.DATABRICKS_TOKEN;
+      if (!localToken) {
+        return res.status(500).json({ error: 'DATABRICKS_TOKEN required for local development' });
+      }
+      
+      const host = process.env.DATABRICKS_HOST;
+      if (!host) {
+        return res.status(500).json({ error: 'DATABRICKS_HOST required for local development' });
+      }
+      
+      // Use Databricks SQL API 2.0 to execute statement
+      const response = await fetch(`${host}/api/2.0/sql/statements`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          statement,
+          warehouse_id,
+          wait_timeout: wait_timeout || '30s',
+          disposition: disposition || 'INLINE'
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`SQL execution failed: ${response.status} - ${errorData.message || 'Unknown error'}`);
+      }
+
+      const result = await response.json();
+      res.json(result);
+      return;
     }
 
     const userToken = getUserToken(req);
@@ -326,7 +547,33 @@ app.get('/api/databricks/2.0/sql/statements/:statementId', async (req, res) => {
     const { statementId } = req.params;
     
     if (!req.isDatabricksApps) {
-      return res.status(400).json({ error: 'SQL statement polling is only available in Databricks Apps environment' });
+      // Local development - use personal access token
+      const localToken = process.env.DATABRICKS_TOKEN;
+      if (!localToken) {
+        return res.status(500).json({ error: 'DATABRICKS_TOKEN required for local development' });
+      }
+      
+      const host = process.env.DATABRICKS_HOST;
+      if (!host) {
+        return res.status(500).json({ error: 'DATABRICKS_HOST required for local development' });
+      }
+      
+      // Use Databricks SQL API 2.0 to get statement status
+      const response = await fetch(`${host}/api/2.0/sql/statements/${statementId}`, {
+        headers: {
+          'Authorization': `Bearer ${localToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`Statement status check failed: ${response.status} - ${errorData.message || 'Unknown error'}`);
+      }
+
+      const result = await response.json();
+      res.json(result);
+      return;
     }
 
     const userToken = getUserToken(req);
