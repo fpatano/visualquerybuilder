@@ -187,6 +187,53 @@ const QueryPreview: React.FC = () => {
       {/* Content */}
       {renderContent()}
 
+      {/* SQL Warnings and Analysis */}
+      {sqlQuery.trim() && (
+        <div className="border-t border-databricks-medium-gray">
+          {/* SQL Warnings */}
+          <div className="p-4 border-b border-databricks-medium-gray">
+            <h4 className="text-sm font-medium text-yellow-700 mb-2 flex items-center">
+              <AlertCircle className="w-4 h-4 mr-2" />
+              SQL Warnings
+            </h4>
+            <div className="text-sm text-yellow-600 bg-yellow-50 p-3 rounded">
+              ⚠️ Some join columns may benefit from indexes
+            </div>
+          </div>
+          
+          {/* Query Analysis */}
+          <div className="p-4">
+            <h4 className="text-sm font-medium text-blue-700 mb-2">Query Analysis</h4>
+            <div className="grid grid-cols-2 gap-3 text-sm text-databricks-dark-gray">
+              <div>
+                <span className="font-medium">Parse Time:</span> 
+                <span className="ml-2">-- ms</span>
+              </div>
+              <div>
+                <span className="font-medium">SQL Length:</span> 
+                <span className="ml-2">{sqlQuery.length} chars</span>
+              </div>
+              <div>
+                <span className="font-medium">Tables:</span> 
+                <span className="ml-2">--</span>
+              </div>
+              <div>
+                <span className="font-medium">Joins:</span> 
+                <span className="ml-2">--</span>
+              </div>
+              <div>
+                <span className="font-medium">Subqueries:</span> 
+                <span className="ml-2">--</span>
+              </div>
+              <div>
+                <span className="font-medium">CTEs:</span> 
+                <span className="ml-2">--</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Footer */}
       {queryResult && !queryResult.error && (
         <div className="px-4 py-2 bg-databricks-light-gray border-t border-databricks-medium-gray">

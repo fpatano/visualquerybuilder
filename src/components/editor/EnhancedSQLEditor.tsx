@@ -54,6 +54,7 @@ const EnhancedSQLEditor: React.FC<EnhancedSQLEditorProps> = ({
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
   const [parserMetadata, setParserMetadata] = useState<any>(null);
+  const [isImporting, setIsImporting] = useState(false);
 
   // Refs
   const editorRef = useRef<any>(null);
@@ -72,7 +73,7 @@ const EnhancedSQLEditor: React.FC<EnhancedSQLEditorProps> = ({
 
   // Generate SQL from canvas state
   useEffect(() => {
-    if (state.tables.length > 0) {
+    if (state.tables.length > 0 && !isImporting) {
       try {
         const result = generateSQLWithMetadata(state, {
           dialect: 'mysql',
@@ -93,7 +94,7 @@ const EnhancedSQLEditor: React.FC<EnhancedSQLEditorProps> = ({
         setValidationErrors([`SQL generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`]);
       }
     }
-  }, [state, onQueryChange]);
+  }, [state, onQueryChange, isImporting]);
 
   // Sync with QueryBuilder context SQL state
   useEffect(() => {
@@ -144,6 +145,7 @@ const EnhancedSQLEditor: React.FC<EnhancedSQLEditorProps> = ({
 
   // Import SQL from file
   const handleImportSQL = useCallback(() => {
+    setIsImporting(true);
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.sql';
@@ -151,20 +153,27 @@ const EnhancedSQLEditor: React.FC<EnhancedSQLEditorProps> = ({
       const file = (e.target as HTMLInputElement).files?.[0];
       if (file) {
         const reader = new FileReader();
-        reader.onload = (e) => {
-          const content = e.target?.result as string;
-          setSql(content);
-          if (editorRef.current) {
-            editorRef.current.setValue(content);
+        reader.onload = async (e) => {
+          try {
+            const content = e.target?.result as string;
+            setSql(content);
+            if (editorRef.current) {
+              editorRef.current.setValue(content);
+            }
+            dispatch({ type: 'UPDATE_SQL', payload: content });
+            if (onQueryChange) {
+              onQueryChange(content);
+            }
+            await applySqlToCanvas(content);
+          } catch (error) {
+            console.error('Failed to import SQL:', error);
+          } finally {
+            setIsImporting(false);
           }
-          // Update the QueryBuilder context
-          dispatch({ type: 'UPDATE_SQL', payload: content });
-          if (onQueryChange) {
-            onQueryChange(content);
-          }
-          applySqlToCanvas(content); // Apply SQL to canvas after import
         };
         reader.readAsText(file);
+      } else {
+        setIsImporting(false);
       }
     };
     input.click();
