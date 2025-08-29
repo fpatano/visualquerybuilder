@@ -1,13 +1,27 @@
 import React, { useState } from 'react';
-import CatalogExplorer from '../catalog/CatalogExplorer';
 import EnhancedVisualCanvas from '../canvas/EnhancedVisualCanvas';
 import EnhancedSQLEditor from '../editor/EnhancedSQLEditor';
+import CatalogExplorer from '../catalog/CatalogExplorer';
 import ProfilingPane from '../profiling/ProfilingPane';
 import QueryPreview from '../preview/QueryPreview';
 import Header from './Header';
+import { useQueryBuilder } from '../../contexts/QueryBuilderContext';
 
 const MainLayout: React.FC = () => {
   const [activeView, setActiveView] = useState<'canvas' | 'editor' | 'split'>('split');
+  const { state, dispatch, executeQuery } = useQueryBuilder();
+
+  // Handle SQL query changes from the editor
+  const handleQueryChange = (sql: string) => {
+    dispatch({ type: 'UPDATE_SQL', payload: sql });
+  };
+
+  // Handle query execution from the editor
+  const handleExecuteQuery = async (sql: string) => {
+    if (executeQuery) {
+      await executeQuery(true); // true for preview mode
+    }
+  };
 
   return (
     <div className="h-screen flex flex-col bg-databricks-light-gray">
@@ -65,7 +79,10 @@ const MainLayout: React.FC = () => {
           
           {activeView === 'editor' && (
             <div className="flex-1">
-              <EnhancedSQLEditor />
+              <EnhancedSQLEditor 
+                onQueryChange={handleQueryChange}
+                onExecuteQuery={handleExecuteQuery}
+              />
             </div>
           )}
           
@@ -78,7 +95,10 @@ const MainLayout: React.FC = () => {
               
               {/* SQL Editor */}
               <div className="h-64 sql-editor">
-                <EnhancedSQLEditor />
+                <EnhancedSQLEditor 
+                  onQueryChange={handleQueryChange}
+                  onExecuteQuery={handleExecuteQuery}
+                />
               </div>
             </>
           )}

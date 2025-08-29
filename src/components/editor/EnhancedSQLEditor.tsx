@@ -45,7 +45,7 @@ const EnhancedSQLEditor: React.FC<EnhancedSQLEditorProps> = ({
   onQueryChange,
   onExecuteQuery
 }) => {
-  const { state, dispatch } = useQueryBuilder();
+  const { state, dispatch, applySqlToCanvas } = useQueryBuilder();
   const [sql, setSql] = useState('');
   const [isExecuting, setIsExecuting] = useState(false);
   const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
@@ -96,6 +96,16 @@ const EnhancedSQLEditor: React.FC<EnhancedSQLEditorProps> = ({
     }
   }, [state, onQueryChange]);
 
+  // Sync with QueryBuilder context SQL state
+  useEffect(() => {
+    if (state.sqlQuery && state.sqlQuery !== sql) {
+      setSql(state.sqlQuery);
+      if (editorRef.current) {
+        editorRef.current.setValue(state.sqlQuery);
+      }
+    }
+  }, [state.sqlQuery, sql]);
+
   // Handle SQL input changes
   const handleSQLChange = useCallback((value: string | undefined) => {
     const sqlValue = value || '';
@@ -132,6 +142,49 @@ const EnhancedSQLEditor: React.FC<EnhancedSQLEditorProps> = ({
       }
     }
   }, [onQueryChange, dispatch]);
+
+  // Import SQL from file
+  const handleImportSQL = useCallback(() => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.sql';
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const content = e.target?.result as string;
+          setSql(content);
+          if (editorRef.current) {
+            editorRef.current.setValue(content);
+          }
+          // Update the QueryBuilder context
+          dispatch({ type: 'UPDATE_SQL', payload: content });
+          if (onQueryChange) {
+            onQueryChange(content);
+          }
+          applySqlToCanvas(content); // Apply SQL to canvas after import
+        };
+        reader.readAsText(file);
+      }
+    };
+    input.click();
+  }, [onQueryChange, dispatch, applySqlToCanvas]);
+
+  // Export SQL to file
+  const handleExportSQL = useCallback(() => {
+    if (sql.trim()) {
+      const blob = new Blob([sql], { type: 'text/sql' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `query_${Date.now()}.sql`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  }, [sql]);
 
   // Execute SQL query
   const handleExecuteQuery = useCallback(async () => {
@@ -339,6 +392,22 @@ const EnhancedSQLEditor: React.FC<EnhancedSQLEditorProps> = ({
             title="Copy SQL"
           >
             Copy
+          </button>
+          
+          <button
+            onClick={handleImportSQL}
+            className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+            title="Import SQL"
+          >
+            Import
+          </button>
+
+          <button
+            onClick={handleExportSQL}
+            className="px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+            title="Export SQL"
+          >
+            Export
           </button>
           
           <button
