@@ -122,6 +122,53 @@ The app automatically detects whether it's running in Databricks Apps or local d
 - [ ] Environment details logged for debugging
 - [ ] Warnings shown when not in app context
 
+## Deployment
+
+### Prereqs
+- Databricks workspace with Unity Catalog access
+- A Personal Access Token with permissions to update Repos and deploy Apps
+- The repo added to Databricks Repos:
+  Databricks > Repos > Add repo > point to this GitHub repo
+  Note the full Repos path, for example:
+  /Repos/<your-user-or-svc>/<visualquerybuilder>
+
+### Local dev
+npm install
+npm run dev
+
+### One-time CI setup (GitHub Actions)
+1) In GitHub, add repository secrets:
+   - DATABRICKS_HOST = https://<your-workspace>.cloud.databricks.com
+   - DATABRICKS_TOKEN = dapi… (PAT with Repos and Apps perms)
+   - DATABRICKS_REPO_PATH = /Repos/<user-or-svc>/<visualquerybuilder>
+   - APP_NAME = visual-query-builder
+   - BRANCH = main  (optional)
+
+2) Push to main.
+   The workflow at .github/workflows/deploy.yml will:
+   - Install Databricks CLI
+   - Pull the Repos folder to the latest commit on the target branch
+   - Attempt to deploy the App from that folder
+
+### Manual fallback
+If your workspace does not have the Apps CLI yet:
+- CI still updates the Repos folder
+- Open Databricks > Apps > visual-query-builder
+- Click Rebuild to pick up the latest code
+
+### Local deploy (optional)
+Export env vars and run the helper script:
+export DATABRICKS_HOST="https://<workspace>.cloud.databricks.com"
+export DATABRICKS_TOKEN="dapi…"
+export DATABRICKS_REPO_PATH="/Repos/<user-or-svc>/<visualquerybuilder>"
+export APP_NAME="visual-query-builder"
+make deploy
+
+### Security notes
+- Do not commit .env
+- In the workspace, prefer Databricks Secrets over raw env vars
+- The App should read workspace context and secrets at runtime
+
 ## 🛠️ Development
 
 ### Local Development (Limited)
