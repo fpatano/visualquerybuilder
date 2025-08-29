@@ -101,6 +101,7 @@ export interface DataProfile {
     nullPercentage?: number;
     mode?: ProfileMode;
     updatedAt?: string;
+    completenessPercentage?: number;
   };
 }
 

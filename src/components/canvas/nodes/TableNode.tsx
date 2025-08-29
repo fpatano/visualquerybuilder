@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Handle, Position } from 'reactflow';
 import { Table, X, Eye, EyeOff, GripVertical } from 'lucide-react';
-import { TableNode as TableNodeType } from '../../../types';
+import { TableNode as TableNodeType, DataProfile } from '../../../types';
+import { useQueryBuilder } from '../../../contexts/QueryBuilderContext';
 
 interface TableNodeProps {
   data: {
@@ -13,8 +14,203 @@ interface TableNodeProps {
   };
 }
 
+// Tufte-inspired mini sparkline component
+export const MiniSparkline: React.FC<{ data: number[]; width?: number; height?: number }> = ({ 
+  data, 
+  width = 40, 
+  height = 16 
+}) => {
+  if (!data || data.length < 2) {
+    return (
+      <div 
+        className="bg-gray-200 rounded-sm"
+        style={{ width, height }}
+      />
+    );
+  }
+
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+  
+  const points = data.map((value, index) => {
+    const x = (index / (data.length - 1)) * width;
+    const y = height - ((value - min) / range) * height;
+    return `${x},${y}`;
+  }).join(' ');
+
+  return (
+    <svg width={width} height={height} className="inline-block">
+      <polyline
+        points={points}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1"
+        className="text-databricks-blue"
+      />
+    </svg>
+  );
+};
+
+// Column completeness indicator bars
+export const CompletenessBars: React.FC<{ 
+  nullPercentage: number; 
+  uniquePercentage: number; 
+  width?: number; 
+  height?: number 
+}> = ({ 
+  nullPercentage, 
+  uniquePercentage, 
+  width = 20, 
+  height = 16 
+}) => {
+  const nullHeight = (nullPercentage / 100) * height;
+  const uniqueHeight = (uniquePercentage / 100) * height;
+  
+  return (
+    <div className="flex items-end space-x-0.5" style={{ width, height }}>
+      <div 
+        className="bg-red-400 rounded-sm"
+        style={{ 
+          width: 3, 
+          height: nullHeight || 1,
+          minHeight: 1
+        }}
+        title={`${nullPercentage.toFixed(1)}% null`}
+      />
+      <div 
+        className="bg-blue-400 rounded-sm"
+        style={{ 
+          width: 3, 
+          height: uniqueHeight || 1,
+          minHeight: 1
+        }}
+        title={`${uniquePercentage.toFixed(1)}% unique`}
+      />
+    </div>
+  );
+};
+
+// Table profile badge component
+export const TableProfileBadge: React.FC<{ 
+  table: TableNodeType; 
+  profile: DataProfile | null; 
+  isLoading: boolean 
+}> = ({ table, profile, isLoading }) => {
+  if (isLoading) {
+    return (
+      <div className="text-xs text-white/80 animate-pulse">
+        Loading profile...
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="text-xs text-white/80">
+        Profile unavailable
+      </div>
+    );
+  }
+
+  const completeness = profile.metadata?.completenessPercentage || 
+    (profile.totalRows > 0 
+      ? ((profile.totalRows - profile.nullCount) / profile.totalRows * 100).toFixed(0)
+      : 0);
+
+  // Create a simple completeness bar
+  const completenessBars = Math.floor(Number(completeness) / 20);
+  const barDisplay = '█'.repeat(completenessBars) + '▁'.repeat(5 - completenessBars);
+
+  return (
+    <div className="text-xs text-white/90 space-y-1">
+      <div className="flex items-center space-x-2">
+        <span>Rows: {profile.totalRows.toLocaleString()}</span>
+        <span>Cols: {profile.metadata?.columnCount || table.columns.length}</span>
+      </div>
+      <div className="flex items-center space-x-1">
+        <span>Complete:</span>
+        <span className="font-mono">{barDisplay}</span>
+        <span>{completeness}%</span>
+      </div>
+    </div>
+  );
+};
+
+// Column micro-profile component
+export const ColumnMicroProfile: React.FC<{ 
+  column: any; 
+  profile: DataProfile | null; 
+  isLoading: boolean 
+}> = ({ column, profile, isLoading }) => {
+  if (isLoading || !profile) {
+    return (
+      <div className="flex items-center space-x-2 text-xs text-gray-500">
+        <div className="w-10 h-4 bg-gray-200 rounded-sm"></div>
+        <div className="w-4 h-4 bg-gray-200 rounded-sm"></div>
+        <span>...</span>
+      </div>
+    );
+  }
+
+  const nullPercentage = profile.totalRows > 0 
+    ? (profile.nullCount / profile.totalRows * 100) 
+    : 0;
+  const uniquePercentage = profile.totalRows > 0 
+    ? (profile.uniqueCount / profile.totalRows * 100) 
+    : 0;
+
+  // Generate sample data for sparkline (simplified)
+  const generateSparklineData = () => {
+    if (profile.distribution && Object.keys(profile.distribution).length > 0) {
+      return Object.values(profile.distribution).slice(0, 8);
+    }
+    // Fallback: create some sample data based on stats
+    const base = profile.mean || profile.totalRows / 10;
+    return Array.from({ length: 8 }, (_, i) => 
+      Math.max(0, base + (Math.random() - 0.5) * base * 0.5)
+    );
+  };
+
+  const sparklineData = generateSparklineData();
+
+  // Generate summary stat
+  const getSummaryStat = () => {
+    if (profile.dataType?.toLowerCase().includes('int') || 
+        profile.dataType?.toLowerCase().includes('decimal')) {
+      if (profile.mean !== undefined) {
+        return `μ=${profile.mean.toFixed(1)}`;
+      }
+      if (profile.min !== undefined && profile.max !== undefined) {
+        return `${profile.min}-${profile.max}`;
+      }
+    }
+    if (profile.dataType?.toLowerCase().includes('string')) {
+      return `n=${profile.uniqueCount}`;
+    }
+    if (profile.dataType?.toLowerCase().includes('date')) {
+      if (profile.min && profile.max) {
+        return `${profile.min.slice(0, 10)}`;
+      }
+    }
+    return `n=${profile.uniqueCount}`;
+  };
+
+  return (
+    <div className="flex items-center space-x-2 text-xs text-gray-600">
+      <MiniSparkline data={sparklineData} />
+      <CompletenessBars 
+        nullPercentage={nullPercentage} 
+        uniquePercentage={uniquePercentage} 
+      />
+      <span className="font-mono">{getSummaryStat()}</span>
+    </div>
+  );
+};
+
 const TableNode: React.FC<TableNodeProps> = ({ data }) => {
   const { table, onSelectColumn, onRemove, onConnectTo, activeConnect } = data;
+  const { loadDataProfile, state } = useQueryBuilder();
   const [showAllColumns, setShowAllColumns] = useState(false);
   const [selectedColumns, setSelectedColumns] = useState<Set<string>>(new Set());
   const INITIAL_COLUMN_COUNT = 5;
@@ -22,6 +218,26 @@ const TableNode: React.FC<TableNodeProps> = ({ data }) => {
   const [visibleCount, setVisibleCount] = useState<number>(INITIAL_COLUMN_COUNT);
 
   const displayColumns = showAllColumns ? table.columns : table.columns.slice(0, visibleCount);
+
+  // Load table profile when component mounts
+  useEffect(() => {
+    const tableId = `${table.catalog}.${table.schema}.${table.name}`;
+    loadDataProfile(tableId);
+  }, [table.catalog, table.schema, table.name, loadDataProfile]);
+
+  // Load column profiles when table profile is available
+  useEffect(() => {
+    const tableId = `${table.catalog}.${table.schema}.${table.name}`;
+    const tableProfile = state.tableProfiles.get(`${tableId}::fast`);
+    
+    if (tableProfile && tableProfile.totalRows > 0) {
+      // Load profiles for visible columns
+      displayColumns.forEach(column => {
+        const columnId = `${tableId}.${column.name}`;
+        loadDataProfile(tableId, column.name, 'fast');
+      });
+    }
+  }, [table.catalog, table.schema, table.name, displayColumns, state.tableProfiles, loadDataProfile]);
   const hasMoreColumns = !showAllColumns && table.columns.length > visibleCount;
 
   // Simple instinctive affordance: when dragging from a column, visually mark compatible columns
@@ -121,6 +337,15 @@ const TableNode: React.FC<TableNodeProps> = ({ data }) => {
         </div>
       </div>
 
+      {/* Table Profile Badge */}
+      <div className="px-4 py-2 bg-databricks-light-gray border-b border-databricks-medium-gray">
+        <TableProfileBadge 
+          table={table} 
+          profile={state.tableProfiles.get(`${table.catalog}.${table.schema}.${table.name}::fast`)} 
+          isLoading={state.isLoadingProfile} 
+        />
+      </div>
+
       {/* Columns List */}
       <div className="p-2">
         {displayColumns.map((column, index) => (
@@ -173,6 +398,15 @@ const TableNode: React.FC<TableNodeProps> = ({ data }) => {
                   )}
                 </div>
               </div>
+            </div>
+
+            {/* Column Micro-Profile */}
+            <div className="flex items-center space-x-2">
+              <ColumnMicroProfile 
+                column={column} 
+                profile={state.columnProfiles.get(`${table.catalog}.${table.schema}.${table.name}.${column.name}::fast`)} 
+                isLoading={state.isLoadingProfile} 
+              />
             </div>
 
             {/* Grip start connector */}

@@ -12,114 +12,122 @@ A modern, visual SQL query builder application built for Databricks Unity Catalo
 - **User Authorization**: Respects Unity Catalog permissions and row-level security
 - **Sample Queries**: 3 curated TPC-DS queries demonstrating progressive complexity
 
-## Architecture
+## Quick Start - Databricks Apps Deployment
 
-This application uses a **dual authentication model**:
+### 1. Add Repository to Databricks
 
-1. **Service Principal Authentication** (App-level operations)
-   - Used for: App configuration, logging, shared resources
-   - Configured via: `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`
+1. In your Databricks workspace, go to **Repos**
+2. Click **Add Repo** and connect this repository
+3. Give it a name (e.g., `visual-query-builder`)
 
-2. **User Authorization** (On-behalf-of-user operations)
-   - Used for: Unity Catalog access, SQL queries, user-specific data
-   - Automatically handled via: `x-forwarded-access-token` header from Databricks Apps
+### 2. Create Databricks App
 
-## Prerequisites
+1. Go to **Compute > Apps**
+2. Click **Create App**
+3. Fill in the basic information:
+   - **Name**: `visual-query-builder` (or your preferred name)
+   - **Description**: "Build queries visually"
+   - **Source**: Select the repo you just added
+
+### 3. Configure App Resources
+
+In the **Configure** step, set up:
+
+**App Resources:**
+- Click **"+ Add resource"**
+- Select **SQL warehouse** → Choose your warehouse
+- Set **Permission** to "Can use"
+- Set **Resource key** to `sql-warehouse`
+
+**User Authorization Scopes:**
+- Click **"+ Add scope"** and add these required scopes:
+  - `sql` - Execute SQL and manage SQL resources
+  - `catalog.connections` - Manage external connections
+  - `catalog.catalogs:read` - Read catalogs
+  - `catalog.schemas:read` - Read schemas  
+  - `catalog.tables:read` - Read tables
+  - `dashboards.genie` - Manage Genie spaces
+  - `files.files` - Manage files and directories
+
+### 4. Deploy
+
+1. Click **Save** to complete configuration
+2. Click **Deploy** to start the app
+3. Wait for the build process to complete
+4. Your app will be available at the provided URL
+
+## Local Development
+
+### Prerequisites
 
 - Node.js 18+ and npm
 - Databricks workspace with Unity Catalog enabled
 - SQL Warehouse configured
 - Databricks Apps enabled in your workspace
 
-## Quick Start
-
-### 1. Clone and Install
+### Setup
 
 ```bash
+# Clone and install
 git clone <repository-url>
 cd visualquerybuilder
 npm install
-```
 
-### 2. Try Sample Queries
-
-The repository includes 8 curated TPC-DS sample queries to get you started:
-
-```bash
-# Browse sample queries
-ls samples/*.sql
-
-# Start with beginner queries
-cat samples/01_customer_demographics.sql
-```
-
-**Sample Query Levels:**
-- 🌱 **Beginner**: 2-table joins (customer demographics)
-- 🌿 **Intermediate**: 3-table joins (sales performance)  
-- 🌳 **Advanced**: 4-table joins (customer journey analysis)
-
-### 3. Environment Configuration
-
-Copy the environment template and configure your settings:
-
-```bash
+# Copy environment template
 cp env.example .env
-```
 
-Edit `.env` with your Databricks configuration:
-
-```bash
-# For local development
+# Edit .env with your Databricks settings
 DATABRICKS_HOST=dbc-your-workspace.cloud.databricks.com
 DATABRICKS_TOKEN=your-personal-access-token
 DATABRICKS_WAREHOUSE_ID=your-warehouse-id
 
-# For Databricks Apps deployment (auto-configured)
-DATABRICKS_APP_NAME=visual-query-builder
-DATABRICKS_APP_PORT=8000
-```
-
-### 4. Local Development
-
-```bash
+# Start development server
 npm run dev
 ```
 
 The application will be available at `http://localhost:5173`
 
-### 5. Build and Deploy
+### Build and Deploy
 
 ```bash
 npm run build
 npm start
 ```
 
-## Databricks Apps Deployment
+## Sample Queries
 
-### 1. App Configuration
+The repository includes 3 curated TPC-DS sample queries to get you started:
 
-In your Databricks workspace, create a new app with these settings:
+- **🌱 Beginner**: `samples/01_customer_demographics.sql` (2-table joins)
+- **🌿 Intermediate**: `samples/02_store_sales_performance.sql` (3-table joins)  
+- **🌳 Advanced**: `samples/03_customer_purchase_journey.sql` (4-table joins)
 
-**App Resources:**
-- SQL Warehouse: Your configured warehouse with "Can use" permission
-- Resource key: `sql-warehouse`
+## Architecture
 
-**User Authorization Scopes:**
-- `sql` - Execute SQL and manage SQL resources
-- `catalog.connections` - Manage external connections
-- `catalog.catalogs:read` - Read catalogs
-- `catalog.schemas:read` - Read schemas  
-- `catalog.tables:read` - Read tables
-- `dashboards.genie` - Manage Genie spaces
-- `files.files` - Manage files and directories
+This application uses a **dual authentication model**:
 
-### 2. Environment Variables
+1. **Service Principal Authentication** (App-level operations)
+   - Used for: App configuration, logging, shared resources
+   - Configured via: `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET` (auto-configured in Databricks Apps)
 
+2. **User Authorization** (On-behalf-of-user operations)
+   - Used for: Unity Catalog access, SQL queries, user-specific data
+   - Automatically handled via: `x-forwarded-access-token` header from Databricks Apps
+
+## Environment Variables
+
+### For Local Development
+```bash
+DATABRICKS_HOST=dbc-your-workspace.cloud.databricks.com
+DATABRICKS_TOKEN=your-personal-access-token
+DATABRICKS_WAREHOUSE_ID=your-warehouse-id
+```
+
+### For Databricks Apps (Auto-configured)
 The following environment variables are automatically set by Databricks Apps:
-
 ```bash
 DATABRICKS_APP_NAME=visual-query-builder
-DATABRICKS_APP_PORT=8000
+DATABRICKS_APP_PORT=8008
 DATABRICKS_APP_URL=https://your-app.aws.databricksapps.com
 DATABRICKS_CLIENT_ID=your-service-principal-id
 DATABRICKS_CLIENT_SECRET=your-service-principal-secret
@@ -128,28 +136,6 @@ DATABRICKS_SERVER_HOSTNAME=dbc-your-workspace.cloud.databricks.com
 DATABRICKS_WAREHOUSE_ID=your-warehouse-id
 DATABRICKS_WORKSPACE_ID=your-workspace-id
 ```
-
-### 3. Deploy
-
-```bash
-# Build the application
-npm run build
-
-# Deploy to Databricks Apps
-# (This is handled by your Databricks Apps deployment process)
-```
-
-## Authentication Flow
-
-### Local Development
-- Uses `DATABRICKS_TOKEN` environment variable
-- Direct connection to Databricks workspace
-- Full access based on personal access token permissions
-
-### Databricks Apps
-- **Service Principal**: Handles app-level operations
-- **User Token**: Automatically forwarded via `x-forwarded-access-token` header
-- **Permissions**: Respects user's Unity Catalog policies and row-level security
 
 ## API Endpoints
 

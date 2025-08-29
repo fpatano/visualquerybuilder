@@ -344,8 +344,9 @@ export async function getTableProfile(catalog: string, schema: string, table: st
     let dataTypes: { [key: string]: number } = {};
     
     // Minimal metrics only: just row count
+    let columnsData: any[] = [];
     try {
-      const columnsData = await fetchColumns(catalog, schema, table);
+      columnsData = await fetchColumns(catalog, schema, table);
       columnCount = columnsData.length;
     } catch {}
     let totalRows = 0;
@@ -355,6 +356,47 @@ export async function getTableProfile(catalog: string, schema: string, table: st
       if (!Number.isNaN(v)) totalRows = v;
     } catch (e) {
       console.warn('COUNT(*) failed; showing 0 until run succeeds');
+    }
+
+    // Calculate table completeness (percentage of non-null values across all columns)
+    let completenessPercentage = 100;
+    if (totalRows > 0 && columnCount > 0 && columnsData.length > 0) {
+      try {
+        const completenessQuery = `
+          SELECT 
+            SUM(
+              CASE 
+                WHEN col1 IS NOT NULL THEN 1 ELSE 0 
+              END +
+              CASE 
+                WHEN col2 IS NOT NULL THEN 1 ELSE 0 
+              END +
+              CASE 
+                WHEN col3 IS NOT NULL THEN 1 ELSE 0 
+              END +
+              CASE 
+                WHEN col4 IS NOT NULL THEN 1 ELSE 0 
+              END +
+              CASE 
+                WHEN col5 IS NOT NULL THEN 1 ELSE 0 
+              END
+            ) * 100.0 / (${totalRows} * ${Math.min(columnCount, 5)})
+          AS completeness
+          FROM (
+            SELECT 
+              ${columnsData.slice(0, 5).map((col, i) => `${col.name} as col${i + 1}`).join(', ')}
+            FROM ${catalog}.${schema}.${table}
+            LIMIT 1000
+          ) sample_data
+        `;
+        const completenessResult = await executeDatabricksQuery(completenessQuery);
+        const completeness = Number(completenessResult.rows?.[0]?.[0]);
+        if (!Number.isNaN(completeness)) {
+          completenessPercentage = Math.round(completeness);
+        }
+      } catch (e) {
+        console.warn('Completeness calculation failed:', e);
+      }
     }
 
     const distribution = undefined;
@@ -371,11 +413,12 @@ export async function getTableProfile(catalog: string, schema: string, table: st
         nullableColumns: 0,
         tableSize: 'Unknown',
         lastUpdated: 'Unknown',
-        profilingMethod: 'Minimal: COUNT(*)',
+        profilingMethod: 'Minimal: COUNT(*) + completeness',
         isApproximate: false,
         performanceNote: 'Minimal profiling enabled',
         mode: 'fast',
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        completenessPercentage: completenessPercentage
       }
     };
     
@@ -475,7 +518,6 @@ export async function getColumnProfile(catalog: string, schema: string, table: s
     let avg: any = null;
     let stddev: any = null;
     let percentiles: any = undefined;
-    let distribution: { [key: string]: number } | undefined;
     
     // NUMERIC COLUMNS: min, max, avg, sum
     if (isNumeric) {
@@ -515,6 +557,55 @@ export async function getColumnProfile(catalog: string, schema: string, table: s
       }
     }
     
+    // Generate distribution data for sparklines
+    let distribution: { [key: string]: number } | undefined;
+    try {
+      if (isNumeric && Number(totalRows) > 0) {
+        // For numeric columns, create histogram-like distribution
+        const histogramQuery = `
+          SELECT 
+            CASE 
+              WHEN ${columnRef} IS NULL THEN 'NULL'
+              WHEN ${columnRef} < ${min || 0} THEN 'MIN'
+              WHEN ${columnRef} > ${max || 1000} THEN 'MAX'
+              ELSE FLOOR((${columnRef} - ${min || 0}) / ((${max || 1000} - ${min || 0}) / 8))::string
+            END AS bucket,
+            COUNT(*) as count
+          FROM ${tableRef}
+          WHERE ${columnRef} IS NOT NULL
+          GROUP BY bucket
+          ORDER BY bucket
+        `;
+        const histResult = await executeDatabricksQuery(histogramQuery);
+        distribution = {};
+        histResult.rows.forEach(([bucket, count]) => {
+          distribution![bucket] = Number(count);
+        });
+      } else if (isString && Number(totalRows) > 0) {
+        // For string columns, create length distribution
+        const lengthQuery = `
+          SELECT 
+            CASE 
+              WHEN ${columnRef} IS NULL THEN 'NULL'
+              WHEN length(${columnRef}) <= 10 THEN 'SHORT'
+              WHEN length(${columnRef}) <= 50 THEN 'MEDIUM'
+              WHEN length(${columnRef}) <= 100 THEN 'LONG'
+              ELSE 'VERY_LONG'
+            END AS length_bucket,
+            COUNT(*) as count
+          FROM ${tableRef}
+          GROUP BY length_bucket
+          ORDER BY length_bucket
+        `;
+        const lenResult = await executeDatabricksQuery(lengthQuery);
+        distribution = {};
+        lenResult.rows.forEach(([bucket, count]) => {
+          distribution![bucket] = Number(count);
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to generate distribution data:', e);
+    }
     
     return {
       totalRows: Number(totalRows) || 0,

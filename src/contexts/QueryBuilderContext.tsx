@@ -2,6 +2,8 @@ import React, { createContext, useContext, useReducer, useCallback, useEffect } 
 import { QueryState, CatalogItem, QueryResult, DataProfile, ProfileMode, ProfileCacheEntry, ParsedTableRef } from '../types';
 import { generateSQL, parseSQL } from '../utils/sqlGenerator';
 import { executeDatabricksQuery, getTableProfile, getColumnProfile, fetchColumns, fetchCatalogMetadata, fetchSchemas, fetchTables } from '../services/databricksApi';
+import { profileCache } from '../utils/profileCache';
+import { backgroundProfiling } from '../services/backgroundProfiling';
 
 interface QueryBuilderState extends QueryState {
   catalog: CatalogItem[];
@@ -12,6 +14,10 @@ interface QueryBuilderState extends QueryState {
   selectedColumn: string | null;
   dataProfile: DataProfile | null;
   isLoadingProfile: boolean;
+  tableProfiles: Map<string, DataProfile>;
+  columnProfiles: Map<string, DataProfile>;
+  sqlWarnings: string[];
+  aiSummary: { summary: string; timestamp: number; queryHash: string } | null;
 }
 
 type QueryBuilderAction = 
@@ -38,8 +44,12 @@ type QueryBuilderAction =
   | { type: 'SELECT_COLUMN'; payload: string | null }
   | { type: 'SET_DATA_PROFILE'; payload: DataProfile | null }
   | { type: 'SET_LOADING_PROFILE'; payload: boolean }
+  | { type: 'SET_TABLE_PROFILE'; payload: { tableId: string; profile: DataProfile } }
+  | { type: 'SET_COLUMN_PROFILE'; payload: { columnId: string; profile: DataProfile } }
   | { type: 'UPDATE_TABLE_COLUMNS'; payload: { id: string; columns: any[] } }
-  | { type: 'SET_FROM_PARSED_SQL'; payload: { tables: any[]; joins: any[]; selectedColumns: any[] } };
+  | { type: 'SET_FROM_PARSED_SQL'; payload: { tables: any[]; joins: any[]; selectedColumns: any[] } }
+  | { type: 'SET_SQL_WARNINGS'; payload: string[] }
+  | { type: 'SET_AI_SUMMARY'; payload: { summary: string; timestamp: number; queryHash: string } | null };
 
 const initialState: QueryBuilderState = {
   catalog: [],
@@ -57,6 +67,10 @@ const initialState: QueryBuilderState = {
   selectedColumn: null,
   dataProfile: null,
   isLoadingProfile: false,
+  tableProfiles: new Map(),
+  columnProfiles: new Map(),
+  sqlWarnings: [],
+  aiSummary: null,
 };
 
 function queryBuilderReducer(state: QueryBuilderState, action: QueryBuilderAction): QueryBuilderState {
@@ -175,7 +189,23 @@ function queryBuilderReducer(state: QueryBuilderState, action: QueryBuilderActio
     case 'SET_LOADING_PROFILE':
       return { ...state, isLoadingProfile: action.payload };
     
-    case 'SET_FROM_PARSED_SQL':
+    case 'SET_TABLE_PROFILE':
+      const newTableProfiles = new Map(state.tableProfiles);
+      newTableProfiles.set(action.payload.tableId, action.payload.profile);
+      return { ...state, tableProfiles: newTableProfiles };
+    
+    case 'SET_COLUMN_PROFILE':
+      const newColumnProfiles = new Map(state.columnProfiles);
+      newColumnProfiles.set(action.payload.columnId, action.payload.profile);
+              return { ...state, columnProfiles: newColumnProfiles };
+      
+      case 'SET_SQL_WARNINGS':
+        return { ...state, sqlWarnings: action.payload };
+      
+      case 'SET_AI_SUMMARY':
+        return { ...state, aiSummary: action.payload };
+      
+      case 'SET_FROM_PARSED_SQL':
       // Apply aesthetic spacing to imported tables - ALWAYS use aesthetic spacing for imports
       const tablesWithSpacing = action.payload.tables.map((table: any, index: number) => {
         // Force aesthetic spacing for imported tables to ensure proper layout
@@ -215,6 +245,7 @@ interface QueryBuilderContextType {
   cancelQuery?: () => void;
   loadDataProfile: (table: string, column?: string, mode?: ProfileMode) => Promise<void>;
   applySqlToCanvas: (sql: string) => Promise<void>;
+  generateAISummary: () => Promise<void>;
 }
 
 const QueryBuilderContext = createContext<QueryBuilderContextType | undefined>(undefined);
@@ -1084,6 +1115,14 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
       }
       
       dispatch({ type: 'SET_QUERY_RESULT', payload: result });
+      
+      // Auto-generate AI summary after successful query execution
+      if (!result.error) {
+        // Generate AI summary in background
+        generateAISummary().catch(error => {
+          console.warn('AI summary generation failed:', error);
+        });
+      }
     } catch (error) {
       console.error('Query execution failed:', error);
       dispatch({ 
@@ -1107,16 +1146,8 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
       abortRef.current.abort();
     }
   }, []);
-
-  // Simple SWR-style in-memory cache
-  const cacheRef = React.useRef<Map<string, ProfileCacheEntry>>(new Map());
-  const inflightRef = React.useRef<Map<string, Promise<DataProfile>>>(new Map());
-
-  const makeKey = (tableId: string, columnId?: string, mode: ProfileMode = 'fast') => `${tableId}::${columnId || ''}::${mode}`;
-
-  const getTtl = (mode: ProfileMode) => (mode === 'fast' ? 10 * 60 * 1000 : mode === 'standard' ? 30 * 60 * 1000 : 24 * 60 * 60 * 1000);
-
   const loadDataProfile = useCallback(async (table: string, column?: string, mode: ProfileMode = 'fast') => {
+    console.log(`🚀 loadDataProfile called:`, { table, column, mode });
     dispatch({ type: 'SET_LOADING_PROFILE', payload: true });
     
     try {
@@ -1127,59 +1158,75 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
       }
       
       const [catalog, schema, tableName] = parts;
+      const tableKey = `${catalog}.${schema}.${tableName}`;
+      const profileKey = column ? `${tableKey}.${column}` : tableKey;
       
+      console.log(`🔍 Parsed table info:`, { catalog, schema, tableName, tableKey, profileKey });
+      
+      // Check cache first (fastest path)
+      const cached = profileCache.getProfile(profileKey);
+      if (cached && cached.data) {
+        console.log(`📦 Using cached profile for ${profileKey}`);
+        
+        // Store in appropriate profile map
+        if (column) {
+          dispatch({ type: 'SET_COLUMN_PROFILE', payload: { columnId: profileKey, profile: cached.data } });
+        } else {
+          dispatch({ type: 'SET_TABLE_PROFILE', payload: { tableId: profileKey, profile: cached.data } });
+        }
+        
+        dispatch({ type: 'SET_LOADING_PROFILE', payload: false });
+        
+        // Queue for background refresh if stale
+        if (cached.status === 'stale') {
+          profileCache.queueForProfiling(profileKey, 'normal');
+        }
+        
+        return;
+      }
+      
+      console.log(`🔄 Cache miss, loading from warehouse for ${profileKey}`);
+      
+      // If not in cache, load from warehouse
       let profile: DataProfile;
       
-      // SWR: return cached immediately if fresh, then refresh in background
-      const key = makeKey(`${catalog}.${schema}.${tableName}`, column ? `${catalog}.${schema}.${tableName}.${column}` : undefined, mode);
-      const cached = cacheRef.current.get(key);
-      const now = Date.now();
-      const ttl = getTtl(mode);
-      if (cached && cached.updatedAt && (now - cached.updatedAt) < cached.ttlMs && cached.data) {
-        dispatch({ type: 'SET_DATA_PROFILE', payload: cached.data });
-        dispatch({ type: 'SET_LOADING_PROFILE', payload: false });
-        // Fire background refresh but don't await
-        setTimeout(() => loadDataProfile(table, column, mode), 0);
-        return;
-      }
-
-      // Deduplicate in-flight
-      if (inflightRef.current.has(key)) {
-        await inflightRef.current.get(key);
-        const refreshed = cacheRef.current.get(key)?.data || null;
-        dispatch({ type: 'SET_DATA_PROFILE', payload: refreshed });
-        return;
-      }
-      
-      const p = (async () => {
       if (column) {
         // Get column profile
         const columnParts = column.split('.');
-        const columnName = columnParts[columnParts.length - 1]; // Get just the column name
-        console.log(`Loading column profile for: ${catalog}.${schema}.${tableName}.${columnName}`);
+        const columnName = columnParts[columnParts.length - 1];
+        console.log(`Loading column profile for: ${tableKey}.${columnName}`);
         profile = await getColumnProfile(catalog, schema, tableName, columnName);
       } else {
         // Get table profile
-        console.log(`Loading table profile for: ${catalog}.${schema}.${tableName}`);
-          profile = await getTableProfile(catalog, schema, tableName, mode);
-        }
-        return profile;
-      })();
-
-      inflightRef.current.set(key, p);
-      profile = await p;
-      inflightRef.current.delete(key);
+        console.log(`Loading table profile for: ${tableKey}`);
+        profile = await getTableProfile(catalog, schema, tableName, mode);
+        
+        // Queue this table for background profiling of columns
+        backgroundProfiling.addCatalogTables([tableKey]);
+      }
       
-      cacheRef.current.set(key, {
-        key,
+      console.log(`✅ Profile loaded from warehouse:`, {
+        totalRows: profile.totalRows,
+        columnCount: profile.metadata?.columnCount
+      });
+      
+      // Store in cache
+      profileCache.setProfile(profileKey, {
+        key: profileKey,
         mode,
         data: profile,
         status: 'fresh',
         updatedAt: Date.now(),
-        ttlMs: ttl
+        ttlMs: mode === 'fast' ? 10 * 60 * 1000 : 30 * 60 * 1000
       });
       
-      dispatch({ type: 'SET_DATA_PROFILE', payload: profile });
+      // Store in appropriate profile map
+      if (column) {
+        dispatch({ type: 'SET_COLUMN_PROFILE', payload: { columnId: profileKey, profile } });
+      } else {
+        dispatch({ type: 'SET_TABLE_PROFILE', payload: { tableId: profileKey, profile } });
+      }
+      
     } catch (error) {
       console.error('Failed to load data profile:', error);
       
@@ -1190,17 +1237,75 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
         uniqueCount: 0,
         dataType: column ? 'UNKNOWN' : 'TABLE',
         sampleValues: [`Error loading profile: ${error instanceof Error ? error.message : 'Unknown error'}`],
-        distribution: { 'Error': 1 }
+        metadata: {
+          isApproximate: true,
+          profilingMethod: 'Error fallback'
+        }
       };
       
-      dispatch({ type: 'SET_DATA_PROFILE', payload: errorProfile });
+      // Store error profile in cache
+      const profileKey = column ? `${table}.${column}` : table;
+      profileCache.setProfile(profileKey, {
+        key: profileKey,
+        mode,
+        data: errorProfile,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        updatedAt: Date.now(),
+        ttlMs: 5 * 60 * 1000 // 5 minutes for errors
+      });
+      
+      // Store in appropriate profile map
+      if (column) {
+        dispatch({ type: 'SET_COLUMN_PROFILE', payload: { columnId: profileKey, profile: errorProfile } });
+      } else {
+        dispatch({ type: 'SET_TABLE_PROFILE', payload: { tableId: profileKey, profile: errorProfile } });
+      }
     } finally {
       dispatch({ type: 'SET_LOADING_PROFILE', payload: false });
     }
   }, []);
 
+  // Generate AI summary for the current query
+  const generateAISummary = useCallback(async () => {
+    if (!state.sqlQuery.trim() || state.tables.length === 0) {
+      return;
+    }
+
+    try {
+      // Import the AI summary service
+      const { generateAISummary: generateSummary, createQueryMetadata } = await import('../services/aiSummaryService');
+      
+      // Create metadata from current state
+      const metadata = createQueryMetadata(
+        state.tables,
+        state.joins,
+        state.filters,
+        state.aggregations
+      );
+      
+      // Generate AI summary
+      const result = await generateSummary(state.sqlQuery, metadata);
+      
+      // Update state with AI summary
+      dispatch({ 
+        type: 'SET_AI_SUMMARY', 
+        payload: {
+          summary: result.summary,
+          timestamp: result.timestamp,
+          queryHash: result.queryHash
+        }
+      });
+      
+    } catch (error) {
+      console.error('Failed to generate AI summary:', error);
+      // Clear any previous summary on error
+      dispatch({ type: 'SET_AI_SUMMARY', payload: null });
+    }
+  }, [state.sqlQuery, state.tables, state.joins, state.filters, state.aggregations, dispatch]);
+
   return (
-    <QueryBuilderContext.Provider value={{ state, dispatch, executeQuery, cancelQuery, loadDataProfile, applySqlToCanvas }}>
+    <QueryBuilderContext.Provider value={{ state, dispatch, executeQuery, cancelQuery, loadDataProfile, applySqlToCanvas, generateAISummary }}>
       {children}
     </QueryBuilderContext.Provider>
   );

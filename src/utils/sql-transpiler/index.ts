@@ -1,12 +1,31 @@
 /**
- * SQL Transpiler - Main orchestrator for the robust SQL ↔ Visual transpilation system
+ * SQL Transpiler - Main orchestrator for the enhanced SQL ↔ Visual transpilation system
  * 
- * This is the primary interface that replaces the old regex-based parsing system
- * Provides high-level functions for bidirectional SQL ↔ Canvas conversion
+ * This is the primary interface that provides high-level functions for bidirectional SQL ↔ Canvas conversion
+ * using the new enhanced parser with best practices and improved performance
  */
 
-import { RobustSQLParser, parseSQL as parseRobustSQL, generateSQL as generateRobustSQL } from './robust-parser';
-import type { QueryState } from '../../types';
+// Enhanced parser exports (simplified version)
+export { EnhancedSQLParser, parseSQL } from './enhanced-parser-simple';
+export type { 
+  SimpleParseResult as EnhancedParseResult, 
+  ParserOptions 
+} from './enhanced-parser-simple';
+
+// AST parser exports
+export { default as ASTParser } from './ast-parser';
+export type { ASTParseContext, ASTParseResult } from './ast-parser';
+
+// SQL generator exports
+export { SQLGenerator, generateSQLWithMetadata } from './sql-generator';
+export type { SQLGenerationOptions, SQLGenerationResult } from './sql-generator';
+
+// Legacy exports for backward compatibility
+export { RobustSQLParser, parseSQL as parseRobustSQL, generateSQL as generateRobustSQL } from './robust-parser';
+export type { QueryState } from '../../types';
+
+// Import EnhancedSQLParser for internal use
+import { EnhancedSQLParser } from './enhanced-parser-simple';
 
 export interface TranspilerOptions {
   preserveUserPositions?: boolean;
@@ -22,12 +41,15 @@ export interface TranspilerResult<T> {
   debugInfo?: any;
 }
 
+// Import QueryState type
+import type { QueryState } from '../../types';
+
 /**
- * Main SQL Transpiler Class
- * Orchestrates the entire SQL ↔ Visual conversion pipeline using RobustSQLParser
+ * Main SQL Transpiler Class (Enhanced Version)
+ * Orchestrates the entire SQL ↔ Visual conversion pipeline using EnhancedSQLParser
  */
 export class SQLTranspiler {
-  private parser: RobustSQLParser;
+  private parser: EnhancedSQLParser;
   private options: TranspilerOptions;
   private debugMode: boolean;
 
@@ -39,7 +61,10 @@ export class SQLTranspiler {
       ...options
     };
     this.debugMode = this.options.debugMode || false;
-    this.parser = new RobustSQLParser({ debugMode: this.debugMode });
+    this.parser = new EnhancedSQLParser({ 
+      debugMode: this.debugMode,
+      logLevel: this.debugMode ? 'debug' : 'warn'
+    });
   }
 
   /**
@@ -47,7 +72,7 @@ export class SQLTranspiler {
    */
   async sqlToCanvas(sql: string, existingCanvasState?: Partial<QueryState>): Promise<TranspilerResult<Partial<QueryState>>> {
     const startTime = Date.now();
-    this.log('🔄 Starting SQL → Canvas transpilation');
+    this.log('🔄 Starting enhanced SQL → Canvas transpilation');
     
     try {
       const result = this.parser.parseSQL(sql);
@@ -62,16 +87,17 @@ export class SQLTranspiler {
       }
 
       const duration = Date.now() - startTime;
-      this.log(`✅ SQL → Canvas transpilation complete in ${duration}ms`);
+      this.log(`✅ Enhanced SQL → Canvas transpilation complete in ${duration}ms`);
 
       return {
         success: true,
         data: result.data,
-        errors: result.errors,
+        errors: [],
         warnings: result.warnings,
         debugInfo: this.debugMode ? { 
           duration, 
           canvasState: result.data,
+          metadata: result.metadata,
           tableCount: result.data.tables?.length || 0,
           joinCount: result.data.joins?.length || 0
         } : undefined
@@ -79,11 +105,11 @@ export class SQLTranspiler {
 
     } catch (error) {
       const duration = Date.now() - startTime;
-      this.log(`❌ SQL → Canvas transpilation failed in ${duration}ms:`, error);
+      this.log(`❌ Enhanced SQL → Canvas transpilation failed in ${duration}ms:`, error);
       
       return {
         success: false,
-        errors: [`Transpilation failed: ${error instanceof Error ? error.message : 'Unknown error'}`],
+        errors: [`Enhanced transpilation failed: ${error instanceof Error ? error.message : 'Unknown error'}`],
         warnings: [],
         debugInfo: this.debugMode ? { 
           duration, 
@@ -99,7 +125,7 @@ export class SQLTranspiler {
    */
   canvasToSQL(canvasState: QueryState): TranspilerResult<string> {
     const startTime = Date.now();
-    this.log('🔄 Starting Canvas → SQL transpilation');
+    this.log('🔄 Starting enhanced Canvas → SQL transpilation');
     
     try {
       const result = this.parser.generateSQL(canvasState);
@@ -108,19 +134,19 @@ export class SQLTranspiler {
         return {
           success: false,
           errors: result.errors,
-          warnings: result.warnings,
+          warnings: [],
           debugInfo: this.debugMode ? { canvasState, duration: Date.now() - startTime } : undefined
         };
       }
 
       const duration = Date.now() - startTime;
-      this.log(`✅ Canvas → SQL transpilation complete in ${duration}ms`);
+      this.log(`✅ Enhanced Canvas → SQL transpilation complete in ${duration}ms`);
 
       return {
         success: true,
         data: result.sql,
-        errors: result.errors,
-        warnings: result.warnings,
+        errors: [],
+        warnings: [],
         debugInfo: this.debugMode ? { 
           duration, 
           sql: result.sql,
@@ -131,11 +157,11 @@ export class SQLTranspiler {
 
     } catch (error) {
       const duration = Date.now() - startTime;
-      this.log(`❌ Canvas → SQL transpilation failed in ${duration}ms:`, error);
+      this.log(`❌ Enhanced Canvas → SQL transpilation failed in ${duration}ms:`, error);
       
       return {
         success: false,
-        errors: [`Transpilation failed: ${error instanceof Error ? error.message : 'Unknown error'}`],
+        errors: [`Enhanced generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`],
         warnings: [],
         debugInfo: this.debugMode ? { 
           duration, 
@@ -151,7 +177,7 @@ export class SQLTranspiler {
    * Ensures transpilation fidelity
    */
   async validateRoundTrip(originalSQL: string): Promise<TranspilerResult<{ isEquivalent: boolean; newSQL: string; differences: string[] }>> {
-    this.log('🔄 Starting round-trip validation');
+    this.log('🔄 Starting enhanced round-trip validation');
     
     try {
       const result = await this.parser.validateRoundTrip(originalSQL);
@@ -164,15 +190,15 @@ export class SQLTranspiler {
           differences: result.differences
         } : undefined,
         errors: result.errors,
-        warnings: []
+        warnings: result.warnings
       };
 
     } catch (error) {
-      this.log(`❌ Round-trip validation failed:`, error);
+      this.log(`❌ Enhanced round-trip validation failed:`, error);
       
       return {
         success: false,
-        errors: [`Round-trip validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`],
+        errors: [`Enhanced round-trip validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`],
         warnings: []
       };
     }
@@ -190,42 +216,13 @@ export class SQLTranspiler {
       typicalParseTime: string;
       maxTables: number;
       maxJoins: number;
+      cacheSize: number;
+      cacheHitRate: number;
     };
+    dialect: string;
+    version: string;
   } {
-    return {
-      supportedFeatures: [
-        'SELECT with columns, aliases, expressions',
-        'FROM with table references and aliases',
-        'All JOIN types (INNER, LEFT, RIGHT, FULL, CROSS)',
-        'WHERE clauses with complex conditions',
-        'GROUP BY and HAVING',
-        'ORDER BY with multiple columns',
-        'LIMIT and OFFSET',
-        'Basic subqueries in WHERE',
-        'Common Table Expressions (CTEs)',
-        'Window functions (basic)',
-        'CASE expressions',
-        'Functions and aggregations'
-      ],
-      partialSupport: [
-        'Complex nested subqueries',
-        'UNION/INTERSECT/EXCEPT',
-        'Advanced window functions',
-        'Stored procedure calls'
-      ],
-      notSupported: [
-        'DDL statements (CREATE, ALTER, DROP)',
-        'DML statements (INSERT, UPDATE, DELETE)',
-        'Stored procedure definitions',
-        'Advanced Databricks-specific syntax'
-      ],
-      performance: {
-        maxRecommendedQueryLength: 10000, // characters
-        typicalParseTime: '< 100ms',
-        maxTables: 20,
-        maxJoins: 15
-      }
-    };
+    return this.parser.getCapabilities();
   }
 
   /**
@@ -234,13 +231,19 @@ export class SQLTranspiler {
   updateOptions(newOptions: Partial<TranspilerOptions>): void {
     this.options = { ...this.options, ...newOptions };
     this.debugMode = this.options.debugMode || false;
+    
+    // Update parser options
+    this.parser.updateOptions({
+      debugMode: this.debugMode,
+      logLevel: this.debugMode ? 'debug' : 'warn'
+    });
   }
 
   // Private helper methods
 
   private log(...args: any[]): void {
     if (this.debugMode) {
-      console.log('[SQLTranspiler]', ...args);
+      console.log('[EnhancedSQLTranspiler]', ...args);
     }
   }
 }
@@ -254,21 +257,12 @@ export async function transpileSQL(sql: string, options?: TranspilerOptions): Pr
     return result.data;
   }
   
-  console.warn('SQL parsing failed:', result.errors);
+  console.warn('Enhanced SQL parsing failed:', result.errors);
   return null;
 }
 
-export function generateSQL(queryState: QueryState, options?: TranspilerOptions): string {
-  const transpiler = new SQLTranspiler(options);
-  const result = transpiler.canvasToSQL(queryState);
-  
-  if (result.success && result.data) {
-    return result.data;
-  }
-  
-  console.warn('SQL generation failed:', result.errors);
-  return '-- SQL generation failed';
-}
+// Re-export generateSQL from sql-generator to avoid conflicts
+export { generateSQL } from './sql-generator';
 
 // Export everything for advanced usage
 export * from './robust-parser';
