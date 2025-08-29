@@ -51,7 +51,6 @@ const EnhancedSQLEditor: React.FC<EnhancedSQLEditorProps> = ({
   const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
   const [queryHistory, setQueryHistory] = useState<QueryHistoryItem[]>([]);
   const [showHistory, setShowHistory] = useState(false);
-  const [showCanvas, setShowCanvas] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
   const [parserMetadata, setParserMetadata] = useState<any>(null);
@@ -314,11 +313,6 @@ const EnhancedSQLEditor: React.FC<EnhancedSQLEditorProps> = ({
     }
   }, []);
 
-  // Toggle canvas view
-  const handleToggleCanvas = useCallback(() => {
-    setShowCanvas(!showCanvas);
-  }, [showCanvas]);
-
   // Editor options
   const editorOptions = {
     minimap: { enabled: false },
@@ -364,17 +358,6 @@ const EnhancedSQLEditor: React.FC<EnhancedSQLEditorProps> = ({
         <div className="flex items-center space-x-2">
           <h2 className="text-lg font-semibold text-gray-900">SQL Editor</h2>
           
-          <button
-            onClick={handleToggleCanvas}
-            className={`px-3 py-1 text-sm rounded transition-colors ${
-              showCanvas 
-                ? 'bg-blue-500 text-white' 
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
-            title="Toggle canvas view"
-          >
-            {showCanvas ? 'Hide Canvas' : 'Show Canvas'}
-          </button>
         </div>
 
         <div className="flex items-center space-x-2">
