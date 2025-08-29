@@ -1,5 +1,7 @@
 # Visual SQL Query Builder
 
+![Visual Query Builder Demo](VIsual%20Query%20Builder.gif)
+
 A modern, visual SQL query builder application built for Databricks Unity Catalog. This application provides an intuitive interface for building, executing, and analyzing SQL queries with real-time data preview and profiling capabilities.
 
 ## Features
