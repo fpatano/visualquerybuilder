@@ -131,3 +131,33 @@ export function createQueryMetadata(
     }
   };
 }
+
+function generateFallbackSummary(queryText: string, metadata: QueryMetadata): string {
+  const tableCount = metadata.queryComplexity.tableCount;
+  const joinCount = metadata.queryComplexity.joinCount;
+  const filterCount = metadata.queryComplexity.filterCount;
+  
+  let summary = `This query analyzes data from ${tableCount} table${tableCount > 1 ? 's' : ''}`;
+  
+  if (joinCount > 0) {
+    summary += ` with ${joinCount} join${joinCount > 1 ? 's' : ''} between them`;
+  }
+  
+  if (filterCount > 0) {
+    summary += ` and applies ${filterCount} filter${filterCount > 1 ? 's' : ''}`;
+  }
+  
+  summary += `. The business context suggests this is a ${metadata.businessContext} query. `;
+  
+  if (metadata.tableNames.some(name => name.toLowerCase().includes('customer'))) {
+    summary += "This appears to be analyzing customer behavior and purchasing patterns.";
+  } else if (metadata.tableNames.some(name => name.toLowerCase().includes('order') || name.toLowerCase().includes('sale'))) {
+    summary += "This appears to be analyzing sales performance and order data.";
+  } else if (metadata.tableNames.some(name => name.toLowerCase().includes('product'))) {
+    summary += "This appears to be analyzing product performance and inventory data.";
+  } else {
+    summary += "This query explores relationships between different data entities to provide business insights.";
+  }
+  
+  return summary;
+}
