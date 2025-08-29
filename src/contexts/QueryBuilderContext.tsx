@@ -2,6 +2,8 @@ import React, { createContext, useContext, useReducer, useCallback, useEffect } 
 import { QueryState, CatalogItem, QueryResult, DataProfile, ProfileMode, ProfileCacheEntry, ParsedTableRef } from '../types';
 import { generateSQL, parseSQL } from '../utils/sqlGenerator';
 import { executeDatabricksQuery, getTableProfile, getColumnProfile, fetchColumns, fetchCatalogMetadata, fetchSchemas, fetchTables } from '../services/databricksApi';
+import { profileCache } from '../utils/profileCache';
+import { backgroundProfiling } from '../services/backgroundProfiling';
 
 interface QueryBuilderState extends QueryState {
   catalog: CatalogItem[];

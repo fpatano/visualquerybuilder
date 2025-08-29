@@ -11,7 +11,7 @@
  * - Accessibility improvements
  */
 
-import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import ReactFlow, {
   Node,
   Edge,
@@ -26,12 +26,6 @@ import ReactFlow, {
   MiniMap,
   ReactFlowProvider,
   useReactFlow,
-  Panel,
-  ConnectionLineType,
-  NodeTypes,
-  EdgeTypes,
-  OnConnectStartParams,
-  OnConnectEnd,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -40,239 +34,253 @@ import { CatalogItem } from '../../types';
 import TableNode from './nodes/TableNode';
 import FilterNode from './nodes/FilterNode';
 import AggregationNode from './nodes/AggregationNode';
-import { EnhancedSQLParser } from '../../utils/sql-transpiler/enhanced-parser-simple';
-import { generateSQLWithMetadata } from '../../utils/sql-transpiler/sql-generator';
 
-// Enhanced node types with better performance
-const nodeTypes: NodeTypes = {
+const nodeTypes = {
   table: TableNode,
   filter: FilterNode,
   aggregation: AggregationNode,
 };
 
-// Custom edge types for better join visualization
-const edgeTypes: EdgeTypes = {};
-
-interface CanvasToolbarProps {
-  onAddTable: () => void;
-  onAddFilter: () => void;
-  onAddAggregation: () => void;
-  onClearCanvas: () => void;
-  onExportSQL: () => void;
-  onImportSQL: () => void;
-  isConnected: boolean;
-}
-
-const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
-  onAddTable,
-  onAddFilter,
-  onAddAggregation,
-  onClearCanvas,
-  onExportSQL,
-  onImportSQL,
-  isConnected
-}) => {
-  return (
-    <Panel position="top-left" className="bg-white shadow-lg rounded-lg p-4 m-4">
-      <div className="flex flex-col gap-2">
-        <h3 className="text-sm font-semibold text-gray-700 mb-2">Query Builder</h3>
-        
-        <button
-          onClick={onAddTable}
-          className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-          title="Add table to canvas"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          Add Table
-        </button>
-
-        <button
-          onClick={onAddFilter}
-          className="flex items-center gap-2 px-3 py-2 text-sm bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
-          title="Add filter condition"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.207A1 1 0 013 6.5V4z" />
-          </svg>
-          Add Filter
-        </button>
-
-        <button
-          onClick={onAddAggregation}
-          className="flex items-center gap-2 px-3 py-2 text-sm bg-purple-500 text-white rounded hover:bg-purple-600 transition-colors"
-          title="Add aggregation function"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-          </svg>
-          Add Aggregation
-        </button>
-
-        <div className="border-t border-gray-200 my-2"></div>
-
-        <button
-          onClick={onExportSQL}
-          className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
-          title="Export SQL query"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          Export SQL
-        </button>
-
-        <button
-          onClick={onImportSQL}
-          className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
-          title="Import SQL query"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-          </svg>
-          Import SQL
-        </button>
-
-        <button
-          onClick={onClearCanvas}
-          className="flex items-center gap-2 px-3 py-2 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
-          title="Clear canvas"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-          Clear
-        </button>
-
-        <div className="mt-2 text-xs text-gray-500">
-          {isConnected ? (
-            <span className="flex items-center gap-1 text-green-600">
-              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              Connected
-            </span>
-          ) : (
-            <span className="flex items-center gap-1 text-red-600">
-              <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-              Disconnected
-            </span>
-          )}
-        </div>
-      </div>
-    </Panel>
-  );
-};
-
-interface SQLPreviewPanelProps {
-  sql: string;
-  warnings: string[];
-  metadata: any;
-  onCopySQL: () => void;
-}
-
-const SQLPreviewPanel: React.FC<SQLPreviewPanelProps> = ({ sql, warnings, metadata, onCopySQL }) => {
-  return (
-    <Panel position="bottom-right" className="bg-white shadow-lg rounded-lg p-4 m-4 max-w-md">
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-700">SQL Preview</h3>
-          <button
-            onClick={onCopySQL}
-            className="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition-colors"
-            title="Copy SQL to clipboard"
-          >
-            Copy
-          </button>
-        </div>
-
-        <div className="bg-gray-50 p-3 rounded text-xs font-mono text-gray-800 max-h-32 overflow-y-auto">
-          {sql || '-- No SQL generated yet'}
-        </div>
-
-        {warnings.length > 0 && (
-          <div className="space-y-1">
-            <h4 className="text-xs font-medium text-yellow-700">Warnings</h4>
-            {warnings.map((warning, index) => (
-              <div key={index} className="text-xs text-yellow-600 bg-yellow-50 p-2 rounded">
-                ⚠️ {warning}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {metadata && (
-          <div className="text-xs text-gray-600">
-            <div className="grid grid-cols-2 gap-2">
-              <div>Tables: {metadata.tableCount}</div>
-              <div>Joins: {metadata.joinCount}</div>
-              <div>Filters: {metadata.filterCount}</div>
-              <div>Complexity: {metadata.complexity}</div>
-            </div>
-          </div>
-        )}
-      </div>
-    </Panel>
-  );
-};
-
-const EnhancedVisualCanvasInner: React.FC = () => {
+const VisualCanvasInner: React.FC = () => {
   const { state, dispatch } = useQueryBuilder();
-  const { fitView, getViewport, setViewport } = useReactFlow();
-  
-  // Enhanced state management
+  const { fitView } = useReactFlow();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  
-  // UI state
-  const [editingJoinId, setEditingJoinId] = useState<string | null>(null);
-  const [editorSourceCol, setEditorSourceCol] = useState<string>('');
-  const [editorTargetCol, setEditorTargetCol] = useState<string>('');
-  const [editorJoinType, setEditorJoinType] = useState<'INNER'|'LEFT'|'RIGHT'|'FULL'>('INNER');
-  const [connectFrom, setConnectFrom] = useState<{ tableId: string; column: string } | null>(null);
-  const [showSQLPreview, setShowSQLPreview] = useState(true);
-  const [sqlPreview, setSqlPreview] = useState('');
-  const [sqlWarnings, setSqlWarnings] = useState<string[]>([]);
-  const [sqlMetadata, setSqlMetadata] = useState<any>(null);
+  const [editingJoinId, setEditingJoinId] = React.useState<string | null>(null);
+  const [editorSourceCol, setEditorSourceCol] = React.useState<string>('');
+  const [editorTargetCol, setEditorTargetCol] = React.useState<string>('');
+  const [editorJoinType, setEditorJoinType] = React.useState<'INNER'|'LEFT'|'RIGHT'|'FULL'>('INNER');
+  const [connectFrom, setConnectFrom] = React.useState<{ tableId: string; column: string } | null>(null);
 
-  // Performance optimizations
-  const sqlGeneratorRef = useRef<EnhancedSQLParser | null>(null);
-  const lastStateRef = useRef<any | null>(null);
+  // Convert query state to React Flow nodes and edges
+  const reactFlowNodes = useMemo(() => {
+    const tableNodes: Node[] = state.tables.map(table => ({
+      id: table.id,
+      type: 'table',
+      position: table.position,
+      data: {
+        table,
+        onSelectColumn: (columnName: string) => {
+          dispatch({ 
+            type: 'ADD_SELECTED_COLUMN', 
+            payload: { 
+              id: `${table.id}.${columnName}`, 
+              column: columnName, 
+              table: table.id 
+            } 
+          });
+        },
+        onRemove: () => {
+          dispatch({ type: 'REMOVE_TABLE', payload: table.id });
+        },
+        onConnectTo: (targetColumn: string) => {
+          if (!connectFrom) return;
+          if (connectFrom.tableId === table.id) return;
+          const joinId = `${connectFrom.tableId}.${connectFrom.column}__${table.id}.${targetColumn}`;
+          dispatch({ type: 'ADD_JOIN', payload: {
+            id: joinId,
+            sourceTable: connectFrom.tableId,
+            targetTable: table.id,
+            sourceColumn: connectFrom.column,
+            targetColumn: targetColumn,
+            joinType: 'INNER' as const,
+          }});
+          setConnectFrom(null);
+        },
+        activeConnect: connectFrom,
+      },
+    }));
 
-  // Initialize SQL parser
-  useEffect(() => {
-    if (!sqlGeneratorRef.current) {
-      sqlGeneratorRef.current = new EnhancedSQLParser({
-        dialect: 'mysql',
-        debugMode: false,
-        logLevel: 'warn'
-      });
+    // Add filter nodes
+    const filterNodes: Node[] = state.filters.map(filter => ({
+      id: `filter-${filter.id}`,
+      type: 'filter',
+      position: { x: 400, y: 200 + state.filters.indexOf(filter) * 100 },
+      data: {
+        filter,
+        onUpdate: (updatedFilter: any) => {
+          dispatch({ type: 'UPDATE_FILTER', payload: updatedFilter });
+        },
+        onRemove: () => {
+          dispatch({ type: 'REMOVE_FILTER', payload: filter.id });
+        }
+      },
+    }));
+
+    // Add aggregation nodes
+    const aggregationNodes: Node[] = state.aggregations.map(agg => ({
+      id: `agg-${agg.id}`,
+      type: 'aggregation',
+      position: { x: 600, y: 200 + state.aggregations.indexOf(agg) * 100 },
+      data: {
+        aggregation: agg,
+        onUpdate: (updatedAgg: any) => {
+          dispatch({ type: 'UPDATE_AGGREGATION', payload: updatedAgg });
+        },
+        onRemove: () => {
+          dispatch({ type: 'REMOVE_AGGREGATION', payload: agg.id });
+        }
+      },
+    }));
+
+    return [...tableNodes, ...filterNodes, ...aggregationNodes];
+  }, [state.tables, state.filters, state.aggregations, dispatch]);
+
+  const reactFlowEdges = useMemo(() => {
+    const edges = state.joins.map(join => ({
+      id: join.id,
+      source: join.sourceTable,
+      target: join.targetTable,
+      sourceHandle: join.sourceColumn,
+      targetHandle: join.targetColumn,
+      type: 'smoothstep',
+      label: `${join.joinType}\n${join.sourceColumn} = ${join.targetColumn}`,
+      labelStyle: { 
+        fontSize: 11, 
+        fontWeight: 600, 
+        lineHeight: 1.2,
+        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        padding: '4px 8px',
+        borderRadius: '4px',
+        border: '1px solid rgba(0, 0, 0, 0.1)',
+        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+      },
+      labelBgStyle: { fill: 'rgba(255, 255, 255, 0.9)' },
+      labelBgPadding: [8, 4] as [number, number],
+      labelBgBorderRadius: 4,
+      style: { 
+        stroke: join.joinType === 'INNER' ? '#00A1C9' : join.joinType === 'LEFT' ? '#10B981' : join.joinType === 'RIGHT' ? '#F59E0B' : '#8B5CF6', 
+        strokeWidth: 4, // Increased for better visibility
+        strokeDasharray: join.joinType === 'INNER' ? 'none' : '5,5',
+        filter: 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2))' // Add shadow for depth
+      },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        width: 24, // Larger arrow
+        height: 24,
+        color: join.joinType === 'INNER' ? '#00A1C9' : join.joinType === 'LEFT' ? '#10B981' : join.joinType === 'RIGHT' ? '#F59E0B' : '#8B5CF6'
+      }
+    }));
+    
+    if (edges.length > 0) {
+      console.log('🔗 Created', edges.length, 'join edges with enhanced styling');
+    }
+    
+    return edges;
+  }, [state.joins]);
+
+  // Update React Flow nodes and edges when they change
+  React.useEffect(() => {
+    setNodes(reactFlowNodes);
+  }, [reactFlowNodes, setNodes]);
+
+  React.useEffect(() => {
+    setEdges(reactFlowEdges);
+  }, [reactFlowEdges, setEdges]);
+
+  // Auto-fit view when tables are added (especially from SQL import)
+  React.useEffect(() => {
+    if (state.tables.length > 0 && reactFlowNodes.length > 0) {
+      // Small delay to ensure nodes are rendered before fitting
+      setTimeout(() => {
+        // Calculate optimal padding based on number of tables and aesthetic spacing
+        const basePadding = 0.2; // Base padding for visual breathing room
+        const tablePadding = Math.min(0.4, Math.max(0.15, basePadding + (state.tables.length * 0.03)));
+        const joinPadding = state.joins.length > 0 ? 0.05 : 0; // Extra padding for joins
+        
+        const totalPadding = Math.min(0.5, tablePadding + joinPadding);
+        
+        fitView({ 
+          padding: totalPadding, // Enhanced padding for aesthetic spacing
+          includeHiddenNodes: false,
+          maxZoom: state.tables.length > 5 ? 0.7 : 1.1, // Slightly more zoom out for aesthetic spacing
+          minZoom: 0.1, // Allow more zoom out for complex queries
+          duration: 1200 // Slightly longer animation for smooth aesthetic transitions
+        });
+        
+        console.log(`🎨 Aesthetic auto-fit: ${state.tables.length} tables, ${state.joins.length} joins, padding ${totalPadding}`);
+      }, 300); // Longer delay to ensure aesthetic spacing is fully applied
+    }
+  }, [state.tables.length, state.joins.length, reactFlowNodes.length, fitView]);
+
+  // Close join editor and clear any pending connection when related items disappear
+  React.useEffect(() => {
+    if (editingJoinId && !state.joins.some(j => j.id === editingJoinId)) {
+      setEditingJoinId(null);
+    }
+  }, [state.joins, editingJoinId]);
+
+  React.useEffect(() => {
+    // If an active connection was from a table that no longer exists, clear it
+    if (connectFrom && !state.tables.some(t => t.id === connectFrom.tableId)) {
+      setConnectFrom(null);
+    }
+  }, [state.tables, connectFrom]);
+
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      if (connection.source && connection.target && connection.sourceHandle && connection.targetHandle) {
+        const joinId = `${connection.source}.${connection.sourceHandle}__${connection.target}.${connection.targetHandle}`;
+        const newJoin = {
+          id: joinId,
+          sourceTable: connection.source,
+          targetTable: connection.target,
+          sourceColumn: connection.sourceHandle,
+          targetColumn: connection.targetHandle,
+          joinType: 'INNER' as const,
+        };
+
+        dispatch({ type: 'ADD_JOIN', payload: newJoin });
+      }
+    },
+    [dispatch]
+  );
+
+  const onConnectStart = useCallback((event: any, params: { nodeId?: string; handleId?: string; handleType?: string }) => {
+    if (params?.nodeId && params?.handleId) {
+      setConnectFrom({ tableId: params.nodeId, column: params.handleId });
     }
   }, []);
 
-  // Generate SQL preview when state changes
-  useEffect(() => {
-    if (sqlGeneratorRef.current && state.tables.length > 0) {
-      try {
-        const result = generateSQLWithMetadata(state, {
-          dialect: 'mysql',
-          formatOutput: true,
-          useTableAliases: true,
-          optimizeJoins: true
-        });
-        
-        setSqlPreview(result.sql);
-        setSqlWarnings(result.warnings);
-        setSqlMetadata(result.metadata);
-        lastStateRef.current = state;
-      } catch (error) {
-        console.error('SQL generation failed:', error);
-        setSqlPreview('-- Error generating SQL');
-        setSqlWarnings([`SQL generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`]);
-      }
-    }
-  }, [state]);
+  const onConnectEnd = useCallback((event: MouseEvent | TouchEvent) => {
+    // Clear only if not over a valid target: React Flow will call onConnect for valid drops
+    setTimeout(() => {
+      setConnectFrom(null);
+    }, 0);
+  }, []);
 
-  // Handle drag and drop for tables
+  const onEdgeClick = useCallback((event: any, edge: Edge) => {
+    event.stopPropagation();
+    const join = state.joins.find(j => j.id === edge.id);
+    if (!join) return;
+    setEditingJoinId(join.id);
+    setEditorSourceCol(join.sourceColumn);
+    setEditorTargetCol(join.targetColumn);
+    setEditorJoinType(join.joinType);
+  }, [state.joins]);
+
+  const onEdgeDoubleClick = useCallback((event: any, edge: Edge) => {
+    event.stopPropagation();
+    const join = state.joins.find(j => j.id === edge.id);
+    if (!join) return;
+    // Simple prompt-based editor for columns; later replace with popover UI
+    const src = prompt('Source column', join.sourceColumn) || join.sourceColumn;
+    const tgt = prompt('Target column', join.targetColumn) || join.targetColumn;
+    dispatch({ type: 'UPDATE_JOIN_COLUMNS', payload: { id: join.id, sourceColumn: src, targetColumn: tgt } });
+  }, [state.joins, dispatch]);
+
+  const onNodeDragStop = useCallback(
+    (event: any, node: Node) => {
+      if (node.type === 'table') {
+        dispatch({
+          type: 'UPDATE_TABLE_POSITION',
+          payload: { id: node.id, position: node.position }
+        });
+      }
+    },
+    [dispatch]
+  );
+
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
@@ -284,7 +292,7 @@ const EnhancedVisualCanvasInner: React.FC = () => {
       };
 
       try {
-        const catalogItem: any = JSON.parse(
+        const catalogItem: CatalogItem = JSON.parse(
           event.dataTransfer.getData('application/json')
         );
 
@@ -315,7 +323,7 @@ const EnhancedVisualCanvasInner: React.FC = () => {
             name: tableName,
             schema,
             catalog,
-            columns: catalogItem.children?.map((col: any) => ({
+            columns: catalogItem.children?.map(col => ({
               name: col.name,
               dataType: col.dataType || 'STRING',
               nullable: col.nullable ?? true,
@@ -330,7 +338,7 @@ const EnhancedVisualCanvasInner: React.FC = () => {
         console.error('Failed to parse dropped item:', error);
       }
     },
-    [dispatch, state.tables]
+    [dispatch]
   );
 
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -338,258 +346,159 @@ const EnhancedVisualCanvasInner: React.FC = () => {
     event.dataTransfer.dropEffect = 'copy';
   }, []);
 
-  // Convert query state to React Flow nodes and edges with performance optimizations
-  const reactFlowNodes = useMemo(() => {
-    const tableNodes: Node[] = state.tables.map(table => ({
-      id: table.id,
-      type: 'table',
-      position: table.position,
-      data: {
-        table,
-        onSelectColumn: (columnName: string) => {
-          dispatch({ 
-            type: 'ADD_SELECTED_COLUMN', 
-            payload: { 
-              id: `${table.id}.${columnName}`, 
-              column: columnName, 
-              table: table.id 
-            } 
-          });
-        },
-        onRemove: () => {
-          dispatch({ type: 'REMOVE_TABLE', payload: table.id });
-        },
-        onConnectTo: (targetColumn: string) => {
-          if (!connectFrom) return;
-          if (connectFrom.tableId === table.id) return;
-          
-          const joinId = `${connectFrom.tableId}.${connectFrom.column}__${table.id}.${targetColumn}`;
-          dispatch({ 
-            type: 'ADD_JOIN', 
-            payload: {
-              id: joinId,
-              sourceTable: connectFrom.tableId,
-              targetTable: table.id,
-              sourceColumn: connectFrom.column,
-              targetColumn: targetColumn,
-              joinType: 'INNER' as const,
-            }
-          });
-          setConnectFrom(null);
-        },
-        activeConnect: connectFrom,
-      },
-    }));
-
-    const filterNodes: Node[] = state.filters.map(filter => ({
-      id: `filter-${filter.id}`,
-      type: 'filter',
-      position: { x: 400, y: 200 + state.filters.indexOf(filter) * 100 },
-      data: {
-        filter,
-        onUpdate: (updatedFilter: any) => {
-          dispatch({ type: 'UPDATE_FILTER', payload: updatedFilter });
-        },
-        onRemove: () => {
-          dispatch({ type: 'REMOVE_FILTER', payload: filter.id });
-        }
-      },
-    }));
-
-    const aggregationNodes: Node[] = state.aggregations.map(agg => ({
-      id: `agg-${agg.id}`,
-      type: 'aggregation',
-      position: { x: 600, y: 200 + state.aggregations.indexOf(agg) * 100 },
-      data: {
-        aggregation: agg,
-        onUpdate: (updatedAgg: any) => {
-          dispatch({ type: 'UPDATE_AGGREGATION', payload: updatedAgg });
-        },
-        onRemove: () => {
-          dispatch({ type: 'REMOVE_AGGREGATION', payload: agg.id });
-        }
-      },
-    }));
-
-    return [...tableNodes, ...filterNodes, ...aggregationNodes];
-  }, [state, connectFrom, dispatch]);
-
-  // Convert joins to React Flow edges
-  const reactFlowEdges = useMemo(() => {
-    return state.joins.map(join => {
-      const sourceTable = state.tables.find(t => t.id === join.sourceTable);
-      const targetTable = state.tables.find(t => t.id === join.targetTable);
-      
-      if (!sourceTable || !targetTable) return null;
-
-      return {
-        id: join.id,
-        source: join.sourceTable,
-        target: join.targetTable,
-        type: 'smoothstep',
-        animated: true,
-        style: { stroke: '#3b82f6', strokeWidth: 2 },
-        label: `${join.sourceColumn} = ${join.targetColumn}`,
-        labelStyle: { fontSize: 12, fill: '#374151' },
-        labelBgStyle: { fill: '#f9fafb', fillOpacity: 0.8 },
-        labelBgPadding: [4, 4],
-        labelBgBorderRadius: 4,
-        data: {
-          join,
-          onEdit: () => setEditingJoinId(join.id),
-          onRemove: () => dispatch({ type: 'REMOVE_JOIN', payload: join.id })
-        }
-      };
-    }).filter(Boolean) as Edge[];
-  }, [state.joins, state.tables, dispatch]);
-
-  // Update nodes and edges when they change
-  useEffect(() => {
-    setNodes(reactFlowNodes);
-  }, [reactFlowNodes, setNodes]);
-
-  useEffect(() => {
-    setEdges(reactFlowEdges);
-  }, [reactFlowEdges, setEdges]);
-
-  // Handle connections
-  const onConnect = useCallback((params: Connection) => {
-    setEdges((eds) => addEdge(params, eds));
-  }, [setEdges]);
-
-  // Handle connection start
-  const onConnectStart = useCallback((event: React.MouseEvent, params: OnConnectStartParams) => {
-    if (params.nodeId && params.handleId) {
-      setConnectFrom({ tableId: params.nodeId, column: params.handleId });
-    }
-  }, []);
-
-  // Handle connection end
-  const onConnectEnd = useCallback((event: MouseEvent) => {
-    setConnectFrom(null);
-  }, []);
-
-  // Canvas actions
-  const handleAddTable = useCallback(() => {
-    const newTable: any = {
-      id: `table_${Date.now()}`,
-      name: 'New Table',
-      schema: 'default',
-      catalog: 'default',
-      columns: [],
-      position: { x: 100, y: 100 }
-    };
-    
-    dispatch({ type: 'ADD_TABLE', payload: newTable });
-  }, [dispatch]);
-
-  const handleAddFilter = useCallback(() => {
-    const newFilter: any = {
-      id: `filter_${Date.now()}`,
-      column: 'column_name',
-      operator: 'equals',
-      value: 'value',
-      table: state.tables[0]?.id || 'unknown'
-    };
-    
-    dispatch({ type: 'ADD_FILTER', payload: newFilter });
-  }, [dispatch, state.tables]);
-
-  const handleAddAggregation = useCallback(() => {
-    const newAgg: any = {
-      id: `agg_${Date.now()}`,
-      column: 'column_name',
-      function: 'COUNT',
-      table: state.tables[0]?.id || 'unknown'
-    };
-    
-    dispatch({ type: 'ADD_AGGREGATION', payload: newAgg });
-  }, [dispatch, state.tables]);
-
-  const handleClearCanvas = useCallback(() => {
-    if (confirm('Are you sure you want to clear the canvas? This action cannot be undone.')) {
-              // Clear canvas by removing all tables, joins, filters, etc.
-        dispatch({ type: 'SET_CATALOG', payload: [] });
-        // You might need to add more dispatch calls to clear other state
-    }
-  }, [dispatch]);
-
-  const handleExportSQL = useCallback(() => {
-    if (sqlPreview) {
-      navigator.clipboard.writeText(sqlPreview);
-      // You could also show a toast notification here
-    }
-  }, [sqlPreview]);
-
-  const handleImportSQL = useCallback(() => {
-    // This would open a modal or file picker for SQL import
-    alert('SQL import functionality coming soon!');
-  }, []);
-
-  const handleCopySQL = useCallback(() => {
-    if (sqlPreview) {
-      navigator.clipboard.writeText(sqlPreview);
-      // You could also show a toast notification here
-    }
-  }, [sqlPreview]);
-
-  // Auto-fit view when tables are added
-  useEffect(() => {
-    if (state.tables.length > 0) {
-      setTimeout(() => fitView({ padding: 0.1 }), 100);
-    }
-  }, [state.tables.length, fitView]);
-
   return (
-    <div className="w-full h-full relative">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onConnectStart={onConnectStart}
-        onConnectEnd={onConnectEnd}
-        onDrop={onDrop}
-        onDragOver={onDragOver}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        connectionLineType={ConnectionLineType.SmoothStep}
-        snapToGrid={true}
-        snapGrid={[20, 20]}
-        minZoom={0.1}
-        maxZoom={2}
-        defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-        fitView
-        attributionPosition="bottom-left"
-      >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
-        <Controls />
-        <MiniMap 
-          nodeColor="#3b82f6"
-          maskColor="rgba(0, 0, 0, 0.1)"
-          style={{ backgroundColor: 'rgba(255, 255, 255, 0.8)' }}
-        />
-        
-        <CanvasToolbar
-          onAddTable={handleAddTable}
-          onAddFilter={handleAddFilter}
-          onAddAggregation={handleAddAggregation}
-          onClearCanvas={handleClearCanvas}
-          onExportSQL={handleExportSQL}
-          onImportSQL={handleImportSQL}
-          isConnected={true} // You would get this from your connection state
-        />
-
-        {showSQLPreview && (
-          <SQLPreviewPanel
-            sql={sqlPreview}
-            warnings={sqlWarnings}
-            metadata={sqlMetadata}
-            onCopySQL={handleCopySQL}
+    <div className="h-full w-full relative">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onConnectStart={onConnectStart}
+          onConnectEnd={onConnectEnd}
+          onNodeDragStop={onNodeDragStop}
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+          nodeTypes={nodeTypes}
+          // Dragging is constrained to header via event handlers in nodes; no dragHandle prop to avoid warnings
+          connectOnClick
+          nodesConnectable
+          fitView
+          attributionPosition="bottom-left"
+          className="bg-databricks-light-gray"
+          onEdgeClick={onEdgeClick}
+          onEdgeDoubleClick={onEdgeDoubleClick}
+          // Ensure edges render above nodes for better visibility
+          edgesUpdatable={true}
+          edgesFocusable={true}
+          nodesFocusable={true}
+        >
+          <Controls 
+            className="bg-white border border-databricks-medium-gray shadow-md"
+            showInteractive={false}
+          >
+            {/* Custom fit view button with aesthetic spacing */}
+            <button
+              onClick={() => {
+                fitView({ 
+                  padding: 0.25, // Enhanced padding for aesthetic spacing
+                  includeHiddenNodes: false,
+                  maxZoom: 1.0,
+                  minZoom: 0.1,
+                  duration: 800 // Slightly longer for smooth aesthetic transitions
+                });
+              }}
+              className="react-flow__controls-button"
+              title="Fit all tables in view with aesthetic spacing"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M15,3l2.3,2.3l-2.89,2.87l1.42,1.42L18.7,6.7L21,9V3z M6.7,18.7L9,21H3v-6l2.3,2.3l-2.89,2.87l1.42,1.42z M3,9l2.3-2.3l2.87,2.89l1.42-1.42L6.7,6.7L9,3H3z M18.7,17.3L15,21v-6l2.3,2.3l2.87-2.89l1.42,1.42z"/>
+              </svg>
+            </button>
+          </Controls>
+          <MiniMap 
+            className="bg-white border border-databricks-medium-gray"
+            nodeColor="#00A1C9"
+            maskColor="rgba(0, 161, 201, 0.1)"
           />
-        )}
-      </ReactFlow>
+          <Background 
+            variant={BackgroundVariant.Dots} 
+            gap={20} 
+            size={1}
+            color="#E0E0E0"
+          />
+        </ReactFlow>
+
+      {editingJoinId && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setEditingJoinId(null)}>
+          <div className="bg-white rounded-lg border border-databricks-medium-gray shadow-lg p-4 w-[420px]" onClick={(e) => e.stopPropagation()}>
+            <div className="text-databricks-dark-blue font-semibold mb-3">Edit Join</div>
+            {(() => {
+              const join = state.joins.find(j => j.id === editingJoinId);
+              const sourceTable = state.tables.find(t => t.id === join?.sourceTable);
+              const targetTable = state.tables.find(t => t.id === join?.targetTable);
+              const sourceCols = sourceTable?.columns?.map(c => c.name) || [];
+              const targetCols = targetTable?.columns?.map(c => c.name) || [];
+              return (
+                <>
+                  <div className="mb-3">
+                    <label className="block text-xs text-databricks-dark-gray mb-1">Join type</label>
+                    <select value={editorJoinType} onChange={e => setEditorJoinType(e.target.value as any)} className="w-full border rounded px-2 py-1 text-sm">
+                      <option value="INNER">INNER</option>
+                      <option value="LEFT">LEFT</option>
+                      <option value="RIGHT">RIGHT</option>
+                      <option value="FULL">FULL</option>
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-databricks-dark-gray mb-1">Source column ({sourceTable?.name})</label>
+                      <select value={editorSourceCol} onChange={e => setEditorSourceCol(e.target.value)} className="w-full border rounded px-2 py-1 text-sm">
+                        {sourceCols.map(c => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-databricks-dark-gray mb-1">Target column ({targetTable?.name})</label>
+                      <select value={editorTargetCol} onChange={e => setEditorTargetCol(e.target.value)} className="w-full border rounded px-2 py-1 text-sm">
+                        {targetCols.map(c => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex justify-between">
+                    <button 
+                      className="px-3 py-1 text-sm text-red-600 hover:bg-red-50 border border-red-200 rounded"
+                      onClick={() => {
+                        if (!editingJoinId) return;
+                        dispatch({ type: 'REMOVE_JOIN', payload: editingJoinId });
+                        setEditingJoinId(null);
+                      }}
+                    >
+                      Delete Join
+                    </button>
+                    <div className="space-x-2">
+                      <button className="px-3 py-1 text-sm" onClick={() => setEditingJoinId(null)}>Cancel</button>
+                      <button
+                        className="px-3 py-1 text-sm databricks-button"
+                        onClick={() => {
+                          if (!editingJoinId) return;
+                          dispatch({ type: 'UPDATE_JOIN_COLUMNS', payload: { id: editingJoinId, sourceColumn: editorSourceCol, targetColumn: editorTargetCol } });
+                          dispatch({ type: 'UPDATE_JOIN_TYPE', payload: { id: editingJoinId, joinType: editorJoinType } });
+                          setEditingJoinId(null);
+                        }}
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* Canvas Instructions */}
+      {state.tables.length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="text-center p-8 bg-white/90 rounded-lg border border-databricks-medium-gray shadow-sm">
+            <h3 className="text-lg font-semibold text-databricks-dark-blue mb-2">
+              Start Building Your Query
+            </h3>
+            <p className="text-databricks-dark-gray mb-4">
+              Drag tables from the catalog explorer to begin
+            </p>
+            <div className="text-sm text-databricks-dark-gray/70 space-y-1">
+              <p>• Drag tables to add them to your query</p>
+              <p>• Connect tables by dragging from column to column</p>
+              <p>• Right-click on tables to add filters and aggregations</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -597,7 +506,7 @@ const EnhancedVisualCanvasInner: React.FC = () => {
 const EnhancedVisualCanvas: React.FC = () => {
   return (
     <ReactFlowProvider>
-      <EnhancedVisualCanvasInner />
+      <VisualCanvasInner />
     </ReactFlowProvider>
   );
 };

@@ -85,14 +85,6 @@ export default function Header() {
                 {getStatusText()}
               </span>
             </div>
-            <button
-              onClick={checkWarehouseStatus}
-              disabled={isChecking}
-              className="ml-2 p-1 hover:bg-gray-200 rounded disabled:opacity-50"
-              title="Refresh warehouse status"
-            >
-              <Loader2 className="w-3 h-3" />
-            </button>
           </div>
         </div>
 

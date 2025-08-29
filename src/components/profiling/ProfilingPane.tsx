@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { TrendingUp, Database, Hash, Percent, Clock, AlertCircle } from 'lucide-react';
+import { TrendingUp, Database, Hash, Percent, Clock, AlertCircle, Loader2 } from 'lucide-react';
 import { useQueryBuilder } from '../../contexts/QueryBuilderContext';
+import ProfileRefreshButton from './ProfileRefreshButton';
+import { backgroundProfiling } from '../../services/backgroundProfiling';
 
 const ProfilingPane: React.FC = () => {
   const { state, loadDataProfile } = useQueryBuilder();
@@ -332,17 +334,30 @@ const ProfilingPane: React.FC = () => {
           <Database className="w-5 h-5" />
           <span>Data Profile</span>
         </h3>
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="p-1.5 text-databricks-dark-gray hover:text-databricks-blue transition-colors"
-          title={isExpanded ? 'Collapse' : 'Expand'}
-        >
-          <span className="text-xs">{isExpanded ? 'Collapse' : 'Expand'}</span>
-        </button>
+        <div className="flex items-center space-x-2">
+          <ProfileRefreshButton variant="full" />
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="p-1.5 text-databricks-dark-gray hover:text-databricks-blue transition-colors"
+            title={isExpanded ? 'Collapse' : 'Expand'}
+          >
+            <span className="text-xs">{isExpanded ? 'Collapse' : 'Expand'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
+        {/* Background Profiling Status */}
+        {backgroundProfiling.getStatus().isRunning && (
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-center space-x-2 text-blue-700">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-sm">Background profiling in progress...</span>
+            </div>
+          </div>
+        )}
+        
         {isLoadingProfile ? (
           <div className="flex items-center justify-center h-32">
             <div className="flex items-center space-x-2">
