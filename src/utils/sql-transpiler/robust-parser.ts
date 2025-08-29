@@ -466,6 +466,7 @@ export class RobustSQLParser {
       const columnRef = `${tableAlias}.${col.column}`;
       const selectPart = col.alias ? `${columnRef} AS ${col.alias}` : columnRef;
       selectParts.push(selectPart);
+      this.log(`🔧 Added selected column: ${selectPart}`);
     });
 
     // Add aggregations
@@ -477,14 +478,20 @@ export class RobustSQLParser {
       const aggFunc = `${agg.function}(${columnRef})`;
       const selectPart = agg.alias ? `${aggFunc} AS ${agg.alias}` : aggFunc;
       selectParts.push(selectPart);
+      this.log(`🔧 Added aggregation: ${selectPart}`);
     });
 
     // If no columns selected, select all from first table
     if (selectParts.length === 0) {
-      selectParts.push(`${tables[0].id}.*`);
+      // Fix: Use proper table reference format instead of table.id.*
+      const firstTable = tables[0];
+      const tableRef = this.formatTableReference(firstTable);
+      selectParts.push(`${firstTable.id}.*`);
+      this.log(`🔧 No columns selected, using: ${firstTable.id}.*`);
     }
 
     sql += selectParts.join(', ');
+    this.log(`🔧 Final SELECT clause: ${sql}`);
 
     // Build FROM clause with proper table references
     const mainTable = tables[0];

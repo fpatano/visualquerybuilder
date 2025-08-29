@@ -87,11 +87,16 @@ export class BackgroundProfilingService {
         ttlMs: 10 * 60 * 1000 // 10 minutes
       });
       
-      console.log(`✅ Background profiling completed for ${tableKey}`);
+      console.log(`✅ Background profiling completed for ${tableKey}:`, {
+        totalRows: tableProfile.totalRows,
+        columnCount: tableProfile.metadata?.columnCount
+      });
       
       // Queue column profiling for next batch
       if (tableProfile.metadata?.columnCount) {
         const columnCount = tableProfile.metadata.columnCount;
+        console.log(`📊 Queueing ${columnCount} columns for background profiling`);
+        
         for (let i = 0; i < Math.min(columnCount, 10); i++) { // Limit to first 10 columns
           const columnKey = `${tableKey}::${i}::fast`;
           profileCache.queueForProfiling(columnKey, 'normal');

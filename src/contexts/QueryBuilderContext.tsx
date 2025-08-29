@@ -1125,16 +1125,8 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
       abortRef.current.abort();
     }
   }, []);
-
-  // Simple SWR-style in-memory cache
-  const cacheRef = React.useRef<Map<string, ProfileCacheEntry>>(new Map());
-  const inflightRef = React.useRef<Map<string, Promise<DataProfile>>>(new Map());
-
-  const makeKey = (tableId: string, columnId?: string, mode: ProfileMode = 'fast') => `${tableId}::${columnId || ''}::${mode}`;
-
-  const getTtl = (mode: ProfileMode) => (mode === 'fast' ? 10 * 60 * 1000 : mode === 'standard' ? 30 * 60 * 1000 : 24 * 60 * 60 * 1000);
-
   const loadDataProfile = useCallback(async (table: string, column?: string, mode: ProfileMode = 'fast') => {
+    console.log(`🚀 loadDataProfile called:`, { table, column, mode });
     dispatch({ type: 'SET_LOADING_PROFILE', payload: true });
     
     try {
@@ -1145,75 +1137,75 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
       }
       
       const [catalog, schema, tableName] = parts;
+      const tableKey = `${catalog}.${schema}.${tableName}`;
+      const profileKey = column ? `${tableKey}.${column}` : tableKey;
       
-      let profile: DataProfile;
+      console.log(`🔍 Parsed table info:`, { catalog, schema, tableName, tableKey, profileKey });
       
-      // SWR: return cached immediately if fresh, then refresh in background
-      const key = makeKey(`${catalog}.${schema}.${tableName}`, column ? `${catalog}.${schema}.${tableName}.${column}` : undefined, mode);
-      const cached = cacheRef.current.get(key);
-      const now = Date.now();
-      const ttl = getTtl(mode);
-      if (cached && cached.updatedAt && (now - cached.updatedAt) < cached.ttlMs && cached.data) {
+      // Check cache first (fastest path)
+      const cached = profileCache.getProfile(profileKey);
+      if (cached && cached.data) {
+        console.log(`📦 Using cached profile for ${profileKey}`);
+        
         // Store in appropriate profile map
         if (column) {
-          dispatch({ type: 'SET_COLUMN_PROFILE', payload: { columnId: key, profile: cached.data } });
+          dispatch({ type: 'SET_COLUMN_PROFILE', payload: { columnId: profileKey, profile: cached.data } });
         } else {
-          dispatch({ type: 'SET_TABLE_PROFILE', payload: { tableId: key, profile: cached.data } });
+          dispatch({ type: 'SET_TABLE_PROFILE', payload: { tableId: profileKey, profile: cached.data } });
         }
+        
         dispatch({ type: 'SET_LOADING_PROFILE', payload: false });
-        // Fire background refresh but don't await
-        setTimeout(() => loadDataProfile(table, column, mode), 0);
-        return;
-      }
-
-      // Deduplicate in-flight
-      if (inflightRef.current.has(key)) {
-        await inflightRef.current.get(key);
-        const refreshed = cacheRef.current.get(key)?.data || null;
-        if (refreshed) {
-          if (column) {
-            dispatch({ type: 'SET_COLUMN_PROFILE', payload: { columnId: key, profile: refreshed } });
-          } else {
-            dispatch({ type: 'SET_TABLE_PROFILE', payload: { tableId: key, profile: refreshed } });
-          }
+        
+        // Queue for background refresh if stale
+        if (cached.status === 'stale') {
+          profileCache.queueForProfiling(profileKey, 'normal');
         }
+        
         return;
       }
       
-      const p = (async () => {
-        if (column) {
-          // Get column profile
-          const columnParts = column.split('.');
-          const columnName = columnParts[columnParts.length - 1]; // Get just the column name
-          console.log(`Loading column profile for: ${catalog}.${schema}.${tableName}.${columnName}`);
-          profile = await getColumnProfile(catalog, schema, tableName, columnName);
-        } else {
-          // Get table profile
-          console.log(`Loading table profile for: ${catalog}.${schema}.${tableName}`);
-          profile = await getTableProfile(catalog, schema, tableName, mode);
-        }
-        return profile;
-      })();
-
-      inflightRef.current.set(key, p);
-      profile = await p;
-      inflightRef.current.delete(key);
+      console.log(`🔄 Cache miss, loading from warehouse for ${profileKey}`);
       
-      cacheRef.current.set(key, {
-        key,
+      // If not in cache, load from warehouse
+      let profile: DataProfile;
+      
+      if (column) {
+        // Get column profile
+        const columnParts = column.split('.');
+        const columnName = columnParts[columnParts.length - 1];
+        console.log(`Loading column profile for: ${tableKey}.${columnName}`);
+        profile = await getColumnProfile(catalog, schema, tableName, columnName);
+      } else {
+        // Get table profile
+        console.log(`Loading table profile for: ${tableKey}`);
+        profile = await getTableProfile(catalog, schema, tableName, mode);
+        
+        // Queue this table for background profiling of columns
+        backgroundProfiling.addCatalogTables([tableKey]);
+      }
+      
+      console.log(`✅ Profile loaded from warehouse:`, {
+        totalRows: profile.totalRows,
+        columnCount: profile.metadata?.columnCount
+      });
+      
+      // Store in cache
+      profileCache.setProfile(profileKey, {
+        key: profileKey,
         mode,
         data: profile,
         status: 'fresh',
         updatedAt: Date.now(),
-        ttlMs: ttl
+        ttlMs: mode === 'fast' ? 10 * 60 * 1000 : 30 * 60 * 1000
       });
       
       // Store in appropriate profile map
       if (column) {
-        dispatch({ type: 'SET_COLUMN_PROFILE', payload: { columnId: key, profile } });
+        dispatch({ type: 'SET_COLUMN_PROFILE', payload: { columnId: profileKey, profile } });
       } else {
-        dispatch({ type: 'SET_TABLE_PROFILE', payload: { tableId: key, profile } });
+        dispatch({ type: 'SET_TABLE_PROFILE', payload: { tableId: profileKey, profile } });
       }
+      
     } catch (error) {
       console.error('Failed to load data profile:', error);
       
@@ -1230,11 +1222,23 @@ export function QueryBuilderProvider({ children }: { children: React.ReactNode }
         }
       };
       
-      // Store error profile in appropriate map
+      // Store error profile in cache
+      const profileKey = column ? `${table}.${column}` : table;
+      profileCache.setProfile(profileKey, {
+        key: profileKey,
+        mode,
+        data: errorProfile,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        updatedAt: Date.now(),
+        ttlMs: 5 * 60 * 1000 // 5 minutes for errors
+      });
+      
+      // Store in appropriate profile map
       if (column) {
-        dispatch({ type: 'SET_COLUMN_PROFILE', payload: { columnId: `${table}::${column}::${mode}`, profile: errorProfile } });
+        dispatch({ type: 'SET_COLUMN_PROFILE', payload: { columnId: profileKey, profile: errorProfile } });
       } else {
-        dispatch({ type: 'SET_TABLE_PROFILE', payload: { tableId: `${table}::${mode}`, profile: errorProfile } });
+        dispatch({ type: 'SET_TABLE_PROFILE', payload: { tableId: profileKey, profile: errorProfile } });
       }
     } finally {
       dispatch({ type: 'SET_LOADING_PROFILE', payload: false });

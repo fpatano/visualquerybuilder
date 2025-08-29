@@ -55,6 +55,12 @@ export class ProfileCacheManager {
 
   // Store profile in cache
   setProfile(key: string, profile: ProfileCacheEntry): void {
+    console.log(`💾 Storing profile in cache: ${key}`, {
+      status: profile.status,
+      hasData: !!profile.data,
+      updatedAt: profile.updatedAt
+    });
+    
     profile.lastAccessed = Date.now();
     this.memoryCache.set(key, profile);
     
@@ -65,6 +71,8 @@ export class ProfileCacheManager {
     }
     
     this.saveToStorage();
+    
+    console.log(`✅ Profile cached successfully. Cache size: ${this.memoryCache.size}`);
   }
 
   // Check if profile is expired
