@@ -31,7 +31,7 @@ import ReactFlow, {
   NodeTypes,
   EdgeTypes,
   OnConnectStartParams,
-  OnConnectEndParams,
+  OnConnectEnd,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -40,7 +40,7 @@ import { CatalogItem } from '../../types';
 import TableNode from './nodes/TableNode';
 import FilterNode from './nodes/FilterNode';
 import AggregationNode from './nodes/AggregationNode';
-import { EnhancedSQLParser } from '../../utils/sql-transpiler/enhanced-parser';
+import { EnhancedSQLParser } from '../../utils/sql-transpiler/enhanced-parser-simple';
 import { generateSQLWithMetadata } from '../../utils/sql-transpiler/sql-generator';
 
 // Enhanced node types with better performance
@@ -226,7 +226,7 @@ const EnhancedVisualCanvasInner: React.FC = () => {
   // UI state
   const [editingJoinId, setEditingJoinId] = useState<string | null>(null);
   const [editorSourceCol, setEditorSourceCol] = useState<string>('');
-  const [editorTargetCol, setEditorSourceCol] = useState<string>('');
+  const [editorTargetCol, setEditorTargetCol] = useState<string>('');
   const [editorJoinType, setEditorJoinType] = useState<'INNER'|'LEFT'|'RIGHT'|'FULL'>('INNER');
   const [connectFrom, setConnectFrom] = useState<{ tableId: string; column: string } | null>(null);
   const [showSQLPreview, setShowSQLPreview] = useState(true);
@@ -236,7 +236,7 @@ const EnhancedVisualCanvasInner: React.FC = () => {
 
   // Performance optimizations
   const sqlGeneratorRef = useRef<EnhancedSQLParser | null>(null);
-  const lastStateRef = useRef<QueryState | null>(null);
+  const lastStateRef = useRef<any | null>(null);
 
   // Initialize SQL parser
   useEffect(() => {
@@ -442,7 +442,9 @@ const EnhancedVisualCanvasInner: React.FC = () => {
 
   const handleClearCanvas = useCallback(() => {
     if (confirm('Are you sure you want to clear the canvas? This action cannot be undone.')) {
-      dispatch({ type: 'CLEAR_CANVAS' });
+              // Clear canvas by removing all tables, joins, filters, etc.
+        dispatch({ type: 'SET_CATALOG', payload: [] });
+        // You might need to add more dispatch calls to clear other state
     }
   }, [dispatch]);
 

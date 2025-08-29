@@ -5,7 +5,7 @@
  * and converting them to our visual canvas representation
  */
 
-import type { AST, Column, From, Where, Join, GroupBy, OrderBy, Limit } from 'node-sql-parser';
+import type { AST } from 'node-sql-parser';
 import type { 
   QueryState, 
   TableNode, 
@@ -692,7 +692,7 @@ export class ASTParser {
     } else if (expr && expr.type === 'number') {
       return expr.value.toString();
     } else if (Array.isArray(expr)) {
-      return expr.map(item => this.extractValue(item)).filter(Boolean);
+      return expr.map(item => this.extractValue(item)).filter(Boolean) as string[];
     }
     return '';
   }

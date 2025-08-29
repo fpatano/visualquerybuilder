@@ -5,15 +5,12 @@
  * using the new enhanced parser with best practices and improved performance
  */
 
-// Enhanced parser exports
-export { EnhancedSQLParser, parseSQL, generateSQL } from './enhanced-parser';
+// Enhanced parser exports (simplified version)
+export { EnhancedSQLParser, parseSQL } from './enhanced-parser-simple';
 export type { 
-  EnhancedParseResult, 
-  ParseError, 
-  ParseWarning, 
-  ParseMetadata, 
+  SimpleParseResult as EnhancedParseResult, 
   ParserOptions 
-} from './enhanced-parser';
+} from './enhanced-parser-simple';
 
 // AST parser exports
 export { default as ASTParser } from './ast-parser';
@@ -26,6 +23,9 @@ export type { SQLGenerationOptions, SQLGenerationResult } from './sql-generator'
 // Legacy exports for backward compatibility
 export { RobustSQLParser, parseSQL as parseRobustSQL, generateSQL as generateRobustSQL } from './robust-parser';
 export type { QueryState } from '../../types';
+
+// Import EnhancedSQLParser for internal use
+import { EnhancedSQLParser } from './enhanced-parser-simple';
 
 export interface TranspilerOptions {
   preserveUserPositions?: boolean;
@@ -40,6 +40,9 @@ export interface TranspilerResult<T> {
   warnings: string[];
   debugInfo?: any;
 }
+
+// Import QueryState type
+import type { QueryState } from '../../types';
 
 /**
  * Main SQL Transpiler Class (Enhanced Version)
@@ -77,8 +80,8 @@ export class SQLTranspiler {
       if (!result.success || !result.data) {
         return {
           success: false,
-          errors: result.errors.map(e => e.message),
-          warnings: result.warnings.map(w => w.message),
+          errors: result.errors,
+          warnings: result.warnings,
           debugInfo: this.debugMode ? { sql, duration: Date.now() - startTime } : undefined
         };
       }
@@ -90,7 +93,7 @@ export class SQLTranspiler {
         success: true,
         data: result.data,
         errors: [],
-        warnings: result.warnings.map(w => w.message),
+        warnings: result.warnings,
         debugInfo: this.debugMode ? { 
           duration, 
           canvasState: result.data,
@@ -130,7 +133,7 @@ export class SQLTranspiler {
       if (!result.success || !result.sql) {
         return {
           success: false,
-          errors: result.errors.map(e => e.message),
+          errors: result.errors,
           warnings: [],
           debugInfo: this.debugMode ? { canvasState, duration: Date.now() - startTime } : undefined
         };
@@ -186,8 +189,8 @@ export class SQLTranspiler {
           newSQL: result.newSQL || '',
           differences: result.differences
         } : undefined,
-        errors: result.errors.map(e => e.message),
-        warnings: result.warnings.map(w => w.message)
+        errors: result.errors,
+        warnings: result.warnings
       };
 
     } catch (error) {
@@ -258,17 +261,8 @@ export async function transpileSQL(sql: string, options?: TranspilerOptions): Pr
   return null;
 }
 
-export function generateSQL(queryState: QueryState, options?: TranspilerOptions): string {
-  const transpiler = new SQLTranspiler(options);
-  const result = transpiler.canvasToSQL(queryState);
-  
-  if (result.success && result.data) {
-    return result.data;
-  }
-  
-  console.warn('Enhanced SQL generation failed:', result.errors);
-  return '-- Enhanced SQL generation failed';
-}
+// Re-export generateSQL from sql-generator to avoid conflicts
+export { generateSQL } from './sql-generator';
 
 // Export everything for advanced usage
 export * from './robust-parser';
