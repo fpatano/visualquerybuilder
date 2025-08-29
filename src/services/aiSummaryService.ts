@@ -104,22 +104,45 @@ export async function generateAISummary(
       throw new Error(`AI query execution failed: ${result.error}`);
     }
     
-    // Find the ai_summary column index
-    const aiSummaryColumnIndex = result.columns.findIndex(col => col === 'ai_summary');
-    console.log('🤖 AI summary column index:', aiSummaryColumnIndex);
+    // Handle different response formats from ai_query function
+    let summary: string;
     
-    if (aiSummaryColumnIndex === -1) {
-      console.error('🤖 ai_summary column not found in result. Available columns:', result.columns);
-      throw new Error('AI summary column not found in result');
+    if (result.columns && result.columns.length > 0) {
+      // Standard format: columns and rows
+      const aiSummaryColumnIndex = result.columns.findIndex(col => col === 'ai_summary');
+      console.log('🤖 AI summary column index:', aiSummaryColumnIndex);
+      
+      if (aiSummaryColumnIndex === -1) {
+        console.error('🤖 ai_summary column not found in result. Available columns:', result.columns);
+        throw new Error('AI summary column not found in result');
+      }
+      
+      if (!result.rows || result.rows.length === 0) {
+        console.error('🤖 No rows returned from AI query');
+        throw new Error('No rows returned from AI query');
+      }
+      
+      summary = result.rows[0]?.[aiSummaryColumnIndex];
+      console.log('🤖 Raw summary value from column:', summary);
+      
+    } else if (result.rows && result.rows.length > 0) {
+      // Alternative format: no columns but has rows (ai_query might return data differently)
+      console.log('🤖 No columns returned, checking rows directly');
+      
+      if (Array.isArray(result.rows[0])) {
+        // If rows[0] is an array, take the first element
+        summary = result.rows[0][0];
+        console.log('🤖 Raw summary value from first array element:', summary);
+      } else {
+        // If rows[0] is not an array, use it directly
+        summary = result.rows[0];
+        console.log('🤖 Raw summary value from first row:', summary);
+      }
+      
+    } else {
+      console.error('🤖 No columns or rows returned from AI query');
+      throw new Error('No columns or rows returned from AI query');
     }
-    
-    if (!result.rows || result.rows.length === 0) {
-      console.error('🤖 No rows returned from AI query');
-      throw new Error('No rows returned from AI query');
-    }
-    
-    const summary = result.rows[0]?.[aiSummaryColumnIndex];
-    console.log('🤖 Raw summary value:', summary);
     
     if (!summary) {
       console.error('🤖 Summary value is null/undefined');
