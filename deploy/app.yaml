@@ -2,8 +2,6 @@ name: visual-query-builder
 display_name: Visual SQL Query Builder
 description: A modern visual interface for building SQL queries with Unity Catalog integration
 
-command: ["npm", "run", "start"]
-
 env:
   - name: 'NODE_ENV'
     value: 'production'
@@ -11,10 +9,6 @@ env:
     value: 'info'
   - name: 'FEATURE_ALLOW_NO_DBRX'
     value: '0'  # Changed to 0 to enforce proper environment
-  - name: "DATABRICKS_WAREHOUSE_ID"
-    value: "a274378bae39d2e1"
-  - name: "DATABRICKS_SERVER_HOSTNAME"
-    value: "dbc-fe7b006c-c783.cloud.databricks.com"
 
 # Required permissions for Unity Catalog access
 permissions:
@@ -38,4 +32,3 @@ config:
     type: workspace
     oauth_scopes:
       - sql
-

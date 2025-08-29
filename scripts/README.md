@@ -84,3 +84,30 @@ Install dependencies and build the project.
 - **Frontend**: http://localhost:5173
 - **Backend**: http://localhost:3000
 - **Health Check**: http://localhost:3000/health
+- **Authentication Test**: http://localhost:3000/api/whoami
+
+## 🔐 Authentication Setup
+
+### First Time Setup
+1. **Copy environment template:**
+   ```bash
+   cp ../env.example ../.env
+   ```
+
+2. **Configure your .env file:**
+   ```bash
+   # Edit .env with your Databricks credentials
+   DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
+   DATABRICKS_TOKEN=your-personal-access-token
+   DATABRICKS_WAREHOUSE_ID=your-warehouse-id
+   ```
+
+3. **Test authentication:**
+   ```bash
+   npm run test:auth
+   ```
+
+### Troubleshooting Authentication
+- **"DATABRICKS_TOKEN required"**: Add your token to .env file
+- **"No access token found"**: Check your .env configuration
+- **"Database connection failed"**: Verify warehouse is running and token is valid

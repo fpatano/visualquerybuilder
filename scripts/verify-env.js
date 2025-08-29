@@ -6,12 +6,24 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const REQUIRED = ['NODE_ENV'];
+
+// Check if running in Databricks Apps environment
+const isDatabricksApps = !!process.env.DATABRICKS_SERVER_HOSTNAME;
+
 const RECOMMENDED = [
   'PORT',
   'APP_BASE_PATH',
-  'LOG_LEVEL',
+  'LOG_LEVEL'
+];
+
+// Environment-specific required variables
+const LOCAL_REQUIRED = [
   'DATABRICKS_HOST',
   'DATABRICKS_TOKEN',
+  'DATABRICKS_WAREHOUSE_ID'
+];
+
+const APPS_REQUIRED = [
   'DATABRICKS_WAREHOUSE_ID'
 ];
 
@@ -62,24 +74,38 @@ OPTIONAL.forEach(key => {
   }
 });
 
-// Check Databricks connectivity requirements
+// Check environment-specific requirements
 console.log('\n🔗 Databricks Configuration:');
-const hasHost = !!process.env.DATABRICKS_HOST;
-const hasToken = !!process.env.DATABRICKS_TOKEN;
-const hasWarehouse = !!process.env.DATABRICKS_WAREHOUSE_ID;
-
-if (hasHost && hasToken) {
-  console.log('  ✅ Databricks connectivity: configured');
-  if (hasWarehouse) {
+if (isDatabricksApps) {
+  console.log('  🌐 Environment: Databricks Apps');
+  console.log('  ✅ Host: Auto-configured by runtime');
+  console.log('  ✅ Token: Auto-provided by runtime');
+  
+  if (process.env.DATABRICKS_WAREHOUSE_ID) {
     console.log('  ✅ SQL Warehouse: configured');
   } else {
-    console.log('  ⚠️  SQL Warehouse: not configured (query execution may fail)');
+    console.log('  ❌ SQL Warehouse: required in Databricks Apps');
+    hasErrors = true;
   }
-} else if (process.env.FEATURE_ALLOW_NO_DBRX === '1') {
-  console.log('  ℹ️  Databricks connectivity: skipped (FEATURE_ALLOW_NO_DBRX=1)');
 } else {
-  console.log('  ❌ Databricks connectivity: missing host or token');
-  hasErrors = true;
+  console.log('  🖥️  Environment: Local Development');
+  const hasHost = !!process.env.DATABRICKS_HOST;
+  const hasToken = !!process.env.DATABRICKS_TOKEN;
+  const hasWarehouse = !!process.env.DATABRICKS_WAREHOUSE_ID;
+  
+  if (hasHost && hasToken) {
+    console.log('  ✅ Databricks connectivity: configured');
+    if (hasWarehouse) {
+      console.log('  ✅ SQL Warehouse: configured');
+    } else {
+      console.log('  ⚠️  SQL Warehouse: not configured (query execution may fail)');
+    }
+  } else if (process.env.FEATURE_ALLOW_NO_DBRX === '1') {
+    console.log('  ℹ️  Databricks connectivity: skipped (FEATURE_ALLOW_NO_DBRX=1)');
+  } else {
+    console.log('  ❌ Databricks connectivity: missing host or token');
+    hasErrors = true;
+  }
 }
 
 // Port configuration
