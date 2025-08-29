@@ -18,7 +18,7 @@ export function getUserToken(req) {
   
   // In Databricks Apps - token comes from forwarded header
   if (isRequestFromDatabricksApps) {
-    const token = req.header('x-forwarded-access-token');
+    const token = req.headers['x-forwarded-access-token'];
     if (!token) {
       console.error('❌ No x-forwarded-access-token header found in Databricks Apps environment');
       console.error('📋 Available headers:', Object.keys(req.headers));

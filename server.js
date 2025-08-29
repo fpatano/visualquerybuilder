@@ -1,6 +1,8 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { DBSQLClient } from '@databricks/sql';
+import { getUserToken, getDatabricksHost, getDatabricksHttpPath, isDatabricksApps } from './src/utils/auth-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,6 +18,19 @@ app.disable('x-powered-by');
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Middleware to detect Databricks Apps requests
+app.use((req, res, next) => {
+  // Check if this is a Databricks Apps request
+  req.isDatabricksApps = isDatabricksApps();
+  
+  // Log request details for debugging
+  console.log(`🔍 ${req.method} ${req.path}`);
+  console.log(`  - Databricks Apps: ${req.isDatabricksApps}`);
+  console.log(`  - Headers: ${Object.keys(req.headers).filter(h => h.startsWith('x-forwarded-')).join(', ')}`);
+  
+  next();
+});
+
 // Serve static files from the dist directory
 app.use(express.static(path.join(__dirname, 'dist')));
 
@@ -24,7 +39,8 @@ app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    databricksApps: req.isDatabricksApps
   });
 });
 
@@ -33,73 +49,314 @@ app.get('/ready', (req, res) => {
   res.json({ 
     ready: true, 
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
-  });
-});
-
-// Basic info endpoint
-app.get('/api/info', (req, res) => {
-  res.json({
-    app: 'Visual SQL Query Builder',
-    version: '1.0.0',
     environment: process.env.NODE_ENV || 'development',
-    timestamp: new Date().toISOString(),
-    port: PORT,
-    databricksHost: process.env.DATABRICKS_SERVER_HOSTNAME,
-    warehouseId: process.env.DATABRICKS_WAREHOUSE_ID
+    databricksApps: req.isDatabricksApps
   });
 });
 
-// API endpoints
-app.get('/api/warehouse/test', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    message: 'Warehouse connection test endpoint',
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Unity Catalog API endpoints
-app.get('/api/unity-catalog/catalogs', (req, res) => {
-  // Mock response for now - you'll need to implement actual Databricks API calls
+// Configuration endpoint
+app.get('/api/config', (req, res) => {
   res.json({
-    catalogs: [
-      { name: 'default', comment: 'Default catalog' },
-      { name: 'hive_metastore', comment: 'Hive metastore catalog' }
-    ]
+    warehouseId: process.env.DATABRICKS_WAREHOUSE_ID,
+    databricksHost: process.env.DATABRICKS_SERVER_HOSTNAME || process.env.DATABRICKS_HOST,
+    workspaceId: process.env.DATABRICKS_WORKSPACE_ID,
+    environment: req.isDatabricksApps ? 'databricks-apps' : 'local'
   });
 });
 
-app.get('/api/unity-catalog/schemas', (req, res) => {
-  const { catalog_name } = req.query;
-  res.json({
-    schemas: [
-      { name: 'default', comment: 'Default schema' },
-      { name: 'information_schema', comment: 'Information schema' }
-    ]
-  });
+// Warehouse status endpoint
+app.post('/api/warehouse/status', async (req, res) => {
+  try {
+    if (!req.isDatabricksApps) {
+      return res.json({ status: 'RUNNING', message: 'Local development - assuming warehouse is running' });
+    }
+
+    const userToken = getUserToken(req);
+    const host = getDatabricksHost();
+    
+    // Use Databricks REST API to check warehouse status
+    const response = await fetch(`${host}/api/2.0/sql/warehouses/${process.env.DATABRICKS_WAREHOUSE_ID}`, {
+      headers: {
+        'Authorization': `Bearer ${userToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Warehouse status check failed: ${response.status}`);
+    }
+
+    const warehouse = await response.json();
+    res.json({ 
+      status: warehouse.state || 'UNKNOWN',
+      message: `Warehouse ${warehouse.name} is ${warehouse.state}`,
+      warehouse: warehouse
+    });
+  } catch (error) {
+    console.error('Warehouse status check failed:', error);
+    res.json({ 
+      status: 'UNKNOWN', 
+      message: 'Unable to determine warehouse status',
+      error: error.message
+    });
+  }
 });
 
-app.get('/api/unity-catalog/tables', (req, res) => {
-  const { catalog_name, schema_name } = req.query;
-  res.json({
-    tables: [
-      { name: 'sample_table', comment: 'Sample table' }
-    ]
-  });
+// Unity Catalog API endpoints with real Databricks implementation
+app.get('/api/unity-catalog/catalogs', async (req, res) => {
+  try {
+    if (!req.isDatabricksApps) {
+      // Mock response for local development
+      return res.json({
+        catalogs: [
+          { name: 'default', comment: 'Default catalog' },
+          { name: 'hive_metastore', comment: 'Hive metastore catalog' }
+        ]
+      });
+    }
+
+    const userToken = getUserToken(req);
+    const host = getDatabricksHost();
+    
+    // Use Databricks REST API to get catalogs
+    const response = await fetch(`${host}/api/2.1/unity-catalog/catalogs`, {
+      headers: {
+        'Authorization': `Bearer ${userToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch catalogs: ${response.status}`);
+    }
+
+    const data = await response.json();
+    res.json({ catalogs: data.catalogs || [] });
+  } catch (error) {
+    console.error('Failed to fetch catalogs:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch catalogs',
+      message: error.message 
+    });
+  }
 });
 
-app.get('/api/unity-catalog/columns', (req, res) => {
-  const { catalog_name, schema_name, table_name } = req.query;
-  res.json({
-    columns: [
-      { name: 'id', type_text: 'INT', comment: 'Primary key' },
-      { name: 'name', type_text: 'STRING', comment: 'Name field' }
-    ]
-  });
+app.get('/api/unity-catalog/schemas', async (req, res) => {
+  try {
+    const { catalog_name } = req.query;
+    
+    if (!catalog_name) {
+      return res.status(400).json({ error: 'catalog_name parameter is required' });
+    }
+
+    if (!req.isDatabricksApps) {
+      // Mock response for local development
+      return res.json({
+        schemas: [
+          { name: 'default', comment: 'Default schema' },
+          { name: 'information_schema', comment: 'Information schema' }
+        ]
+      });
+    }
+
+    const userToken = getUserToken(req);
+    const host = getDatabricksHost();
+    
+    // Use Databricks REST API to get schemas
+    const response = await fetch(`${host}/api/2.1/unity-catalog/schemas?catalog_name=${catalog_name}`, {
+      headers: {
+        'Authorization': `Bearer ${userToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch schemas: ${response.status}`);
+    }
+
+    const data = await response.json();
+    res.json({ schemas: data.schemas || [] });
+  } catch (error) {
+    console.error('Failed to fetch schemas:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch schemas',
+      message: error.message 
+    });
+  }
 });
 
-// Serve the React app for all other routes (SPA routing) - Updated for Databricks Apps deployment
+app.get('/api/unity-catalog/tables', async (req, res) => {
+  try {
+    const { catalog_name, schema_name } = req.query;
+    
+    if (!catalog_name || !schema_name) {
+      return res.status(400).json({ error: 'Both catalog_name and schema_name parameters are required' });
+    }
+
+    if (!req.isDatabricksApps) {
+      // Mock response for local development
+      return res.json({
+        tables: [
+          { name: 'sample_table', comment: 'Sample table' }
+        ]
+      });
+    }
+
+    const userToken = getUserToken(req);
+    const host = getDatabricksHost();
+    
+    // Use Databricks REST API to get tables
+    const response = await fetch(`${host}/api/2.1/unity-catalog/tables?catalog_name=${catalog_name}&schema_name=${schema_name}`, {
+      headers: {
+        'Authorization': `Bearer ${userToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch tables: ${response.status}`);
+    }
+
+    const data = await response.json();
+    res.json({ tables: data.tables || [] });
+  } catch (error) {
+    console.error('Failed to fetch tables:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch tables',
+      message: error.message 
+    });
+  }
+});
+
+app.get('/api/unity-catalog/columns', async (req, res) => {
+  try {
+    const { catalog_name, schema_name, table_name } = req.query;
+    
+    if (!catalog_name || !schema_name || !table_name) {
+      return res.status(400).json({ error: 'catalog_name, schema_name, and table_name parameters are required' });
+    }
+
+    if (!req.isDatabricksApps) {
+      // Mock response for local development
+      return res.json({
+        columns: [
+          { name: 'id', type_text: 'INT', comment: 'Primary key' },
+          { name: 'name', type_text: 'STRING', comment: 'Name field' }
+        ]
+      });
+    }
+
+    const userToken = getUserToken(req);
+    const host = getDatabricksHost();
+    
+    // Use Databricks REST API to get columns
+    const response = await fetch(`${host}/api/2.1/unity-catalog/tables/${catalog_name}.${schema_name}.${table_name}`, {
+      headers: {
+        'Authorization': `Bearer ${userToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch table metadata: ${response.status}`);
+    }
+
+    const table = await response.json();
+    const columns = table.storage_properties?.columns || [];
+    
+    res.json({ columns: columns });
+  } catch (error) {
+    console.error('Failed to fetch columns:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch columns',
+      message: error.message 
+    });
+  }
+});
+
+// Databricks SQL API 2.0 endpoints
+app.post('/api/databricks/2.0/sql/statements', async (req, res) => {
+  try {
+    const { statement, warehouse_id, wait_timeout, disposition } = req.body;
+    
+    if (!statement || !warehouse_id) {
+      return res.status(400).json({ error: 'statement and warehouse_id are required' });
+    }
+
+    if (!req.isDatabricksApps) {
+      return res.status(400).json({ error: 'SQL execution is only available in Databricks Apps environment' });
+    }
+
+    const userToken = getUserToken(req);
+    const host = getDatabricksHost();
+    
+    // Use Databricks SQL API 2.0 to execute statement
+    const response = await fetch(`${host}/api/2.0/sql/statements`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${userToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        statement,
+        warehouse_id,
+        wait_timeout: wait_timeout || '30s',
+        disposition: disposition || 'INLINE'
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`SQL execution failed: ${response.status} - ${errorData.message || 'Unknown error'}`);
+    }
+
+    const result = await response.json();
+    res.json(result);
+  } catch (error) {
+    console.error('SQL execution failed:', error);
+    res.status(500).json({ 
+      error: 'SQL execution failed',
+      message: error.message 
+    });
+  }
+});
+
+app.get('/api/databricks/2.0/sql/statements/:statementId', async (req, res) => {
+  try {
+    const { statementId } = req.params;
+    
+    if (!req.isDatabricksApps) {
+      return res.status(400).json({ error: 'SQL statement polling is only available in Databricks Apps environment' });
+    }
+
+    const userToken = getUserToken(req);
+    const host = getDatabricksHost();
+    
+    // Use Databricks SQL API 2.0 to get statement status
+    const response = await fetch(`${host}/api/2.0/sql/statements/${statementId}`, {
+      headers: {
+        'Authorization': `Bearer ${userToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Statement status check failed: ${response.status} - ${errorData.message || 'Unknown error'}`);
+    }
+
+    const result = await response.json();
+    res.json(result);
+  } catch (error) {
+    console.error('Statement status check failed:', error);
+    res.status(500).json({ 
+      error: 'Statement status check failed',
+      message: error.message 
+    });
+  }
+});
+
+// Serve the React app for all other routes (SPA routing)
 app.get('*', (req, res) => {
   // Don't serve React app for API routes
   if (req.path.startsWith('/api/')) {
@@ -115,6 +372,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Databricks Host: ${process.env.DATABRICKS_SERVER_HOSTNAME || 'Not set'}`);
   console.log(`Warehouse ID: ${process.env.DATABRICKS_WAREHOUSE_ID || 'Not set'}`);
   console.log(`Static files served from: ${path.join(__dirname, 'dist')}`);
+  console.log(`Databricks Apps Environment: ${isDatabricksApps() ? 'Yes' : 'No'}`);
 });
 
 // Graceful shutdown handling

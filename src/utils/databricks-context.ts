@@ -15,20 +15,13 @@ export interface DatabricksContext {
 }
 
 /**
- * Strict Databricks Apps context check as required
- * Throws an error if not running in proper Databricks Apps context
+ * Soft Databricks Apps context check - no longer throws errors
+ * The backend handles authentication and will surface errors if missing
  */
 export function enforceStrictDatabricksContext(): void {
   // The Visual Query Builder can run in multiple environments (Databricks Apps or localhost for storybook/dev).
-  // The original implementation hard-failed when the `window.databricks` runtime object wasn’t injected,
-  // resulting in an uncaught error: “Not running in Databricks Apps context”.
-  //
-  // That logic is no longer desirable because Databricks Apps already uses the user’s access token for
-  // every backend request, so the client side does **not** need to guess or enforce the runtime context.
-  //
-  // We therefore convert this guard into a soft no-op that only emits an informational log when the
-  // Databricks Apps object is missing.
-
+  // The backend handles all authentication and context validation, so the client side doesn't need to enforce strict guards.
+  
   if ((window as any).databricks) {
     console.log('✅ Databricks Apps context detected');
   } else {
@@ -178,13 +171,15 @@ export function checkDatabricksContext(): DatabricksContext {
 
 /**
  * Validate that the app can make Unity Catalog API calls
+ * Note: This is now a soft validation since the backend handles actual access
  */
 export function validateUnityCatalogAccess(): boolean {
   const context = checkDatabricksContext();
   
   if (!context.isAvailable) {
-    console.error('❌ Cannot access Unity Catalog - not in Databricks Apps context');
-    return false;
+    console.log('ℹ️ Cannot validate Unity Catalog access - not in Databricks Apps context');
+    console.log('ℹ️ Backend will handle authentication and access validation');
+    return true; // Don't block - let backend handle it
   }
   
   // Check if we have the required permissions for Unity Catalog
@@ -192,10 +187,11 @@ export function validateUnityCatalogAccess(): boolean {
   const hasSchemaAccess = context.permissions?.includes('CAN_USE_SCHEMA') || false;
   
   if (!hasCatalogAccess || !hasSchemaAccess) {
-    console.error('❌ Insufficient permissions for Unity Catalog access');
-    console.error(`  - CAN_USE_CATALOG: ${hasCatalogAccess ? '✅' : '❌'}`);
-    console.error(`  - CAN_USE_SCHEMA: ${hasSchemaAccess ? '✅' : '❌'}`);
-    return false;
+    console.warn('⚠️ Insufficient permissions for Unity Catalog access');
+    console.warn(`  - CAN_USE_CATALOG: ${hasCatalogAccess ? '✅' : '❌'}`);
+    console.warn(`  - CAN_USE_SCHEMA: ${hasSchemaAccess ? '✅' : '❌'}`);
+    console.warn('ℹ️ Backend will handle actual access validation');
+    return true; // Don't block - let backend handle it
   }
   
   console.log('✅ Unity Catalog access validated');
@@ -211,8 +207,8 @@ export function getEnvironmentConfig() {
   return {
     isDatabricksApps: context.isAvailable,
     environment: context.environment,
-    apiBase: context.isAvailable ? '/api/databricks' : null,
-    canUseUnityCatalog: validateUnityCatalogAccess(),
+    apiBase: '/api', // Always use /api since backend handles routing
+    canUseUnityCatalog: true, // Backend handles validation
     context
   };
 }

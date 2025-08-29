@@ -1,301 +1,229 @@
-# Visual SQL Query Builder for Databricks
+# Visual SQL Query Builder
 
-A modern, visual interface for building SQL queries with seamless Unity Catalog integration, designed specifically for Databricks Apps.
+A modern, visual SQL query builder application built for Databricks Unity Catalog. This application provides an intuitive interface for building, executing, and analyzing SQL queries with real-time data preview and profiling capabilities.
 
-## 🚀 Quick Start
+## Features
 
-### Prerequisites
+- **Visual Query Builder**: Drag-and-drop interface for building SQL queries
+- **Unity Catalog Integration**: Browse and explore catalogs, schemas, tables, and columns
+- **Real-time Query Execution**: Execute SQL queries against Databricks SQL Warehouses
+- **Data Profiling**: Comprehensive data analysis and statistics
+- **Results Visualization**: Charts and tables for query results
+- **User Authorization**: Respects Unity Catalog permissions and row-level security
 
-- **Databricks Workspace** with Apps feature enabled
-- **Unity Catalog** access with required permissions
-- **Databricks CLI** installed and authenticated
-- **Node.js 18+** and npm
+## Architecture
 
-### Installation & Deployment
+This application uses a **dual authentication model**:
 
-1. **Clone the repository**
-   ```bash
-   git clone <your-repo-url>
-   cd visualquerybuilder
-   ```
+1. **Service Principal Authentication** (App-level operations)
+   - Used for: App configuration, logging, shared resources
+   - Configured via: `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
+2. **User Authorization** (On-behalf-of-user operations)
+   - Used for: Unity Catalog access, SQL queries, user-specific data
+   - Automatically handled via: `x-forwarded-access-token` header from Databricks Apps
 
-3. **Build the application**
-   ```bash
-   npm run build
-   ```
+## Prerequisites
 
-### Deployment Strategy
+- Node.js 18+ and npm
+- Databricks workspace with Unity Catalog enabled
+- SQL Warehouse configured
+- Databricks Apps enabled in your workspace
 
-**🚀 For Quick Testing & Development:**
+## Quick Start
+
+### 1. Clone and Install
+
 ```bash
-# Quick deployment to Databricks for testing
-npm run deploy:test
-# or
-./deploy-new.sh
-```
-**Purpose**: Deploy current code to Databricks for testing and development feedback
-**Features**: Fast build, deploy to Databricks, quick iteration
-
-**🚀 For Production Releases:**
-```bash
-# Production deployment with full validation
-npm run deploy:production
-# or
-./scripts/deploy-databricks-app.sh
-```
-**Purpose**: Production deployments with comprehensive validation and verification
-**Features**: Full validation, comprehensive error checking, deployment verification
-
-5. **Launch from Databricks Workspace**
-   - Go to your Databricks workspace
-   - Navigate to **Apps** in the left sidebar
-   - Find "Visual SQL Query Builder" and click **Launch**
-
-## 🔧 Databricks Apps Configuration
-
-### Prerequisites
-
-- **Databricks CLI v0.200+** with `apps` command support
-- **Workspace Apps permissions** for deployment
-- **Unity Catalog access** for data operations
-
-### Required Permissions
-
-The app requires the following Unity Catalog permissions:
-
-```yaml
-permissions:
-  - permission: CAN_USE_CATALOG
-  - permission: CAN_USE_SCHEMA
-  - permission: CAN_SELECT
-  - permission: CAN_USE_WAREHOUSE
-  - permission: CAN_READ_CATALOG
-  - permission: CAN_READ_SCHEMA
-  - permission: CAN_READ_TABLE
-  - permission: CAN_READ_COLUMN
-```
-
-### Environment Variables
-
-The app automatically detects whether it's running in Databricks Apps or local development:
-
-- **Databricks Apps**: Automatically configured by runtime
-- **Local Development**: Requires manual configuration (see `.env.example`)
-
-## 🚫 Important: Do Not Run on Localhost
-
-**This application MUST be deployed as a Databricks App and launched from within the Databricks workspace.**
-
-- ❌ **Never run on localhost** - will show "Databricks Apps context required" error
-- ❌ **Never serve as static files** - will fail Unity Catalog API calls
-- ✅ **Always deploy via Databricks Apps** and launch from workspace UI
-
-## 🔍 Databricks Apps Debugging Checklist
-
-### 1. Apps Context Test
-- [ ] Verify `window.databricks` is available in browser console
-- [ ] Check that context validation passes on app load
-- [ ] Confirm app is running in Databricks Apps environment
-
-### 2. Deployment Verification
-- [ ] App is deployed via Databricks CLI: `databricks apps deploy`
-- [ ] App appears in workspace Apps menu
-- [ ] App launches from workspace UI (not direct URL access)
-
-### 3. API Endpoint Validation
-- [ ] Unity Catalog API calls use `/api/databricks/unity-catalog/*` routes
-- [ ] API calls only execute when context is valid
-- [ ] Clear error messages shown when context is invalid
-
-### 4. Permission Check
-- [ ] App manifest declares required Unity Catalog permissions
-- [ ] Permissions are granted during app installation
-- [ ] User has explicit Unity Catalog access in workspace
-
-### 5. Console Logging
-- [ ] Full context object logged on app load
-- [ ] Environment details logged for debugging
-- [ ] Warnings shown when not in app context
-
-## Deployment
-
-### Prereqs
-- Databricks workspace with Unity Catalog access
-- A Personal Access Token with permissions to update Repos and deploy Apps
-- The repo added to Databricks Repos:
-  Databricks > Repos > Add repo > point to this GitHub repo
-  Note the full Repos path, for example:
-  /Repos/<your-user-or-svc>/<visualquerybuilder>
-
-### Local dev
+git clone <repository-url>
+cd visualquerybuilder
 npm install
-npm run dev
+```
 
-### One-time CI setup (GitHub Actions)
-1) In GitHub, add repository secrets:
-   - DATABRICKS_HOST = https://<your-workspace>.cloud.databricks.com
-   - DATABRICKS_TOKEN = dapi… (PAT with Repos and Apps perms)
-   - DATABRICKS_REPO_PATH = /Repos/<user-or-svc>/<visualquerybuilder>
-   - APP_NAME = visual-query-builder
-   - BRANCH = main  (optional)
+### 2. Environment Configuration
 
-2) Push to main.
-   The workflow at .github/workflows/deploy.yml will:
-   - Install Databricks CLI
-   - Pull the Repos folder to the latest commit on the target branch
-   - Attempt to deploy the App from that folder
-
-### Manual fallback
-If your workspace does not have the Apps CLI yet:
-- CI still updates the Repos folder
-- Open Databricks > Apps > visual-query-builder
-- Click Rebuild to pick up the latest code
-
-### Local deploy (optional)
-Export env vars and run the helper script:
-export DATABRICKS_HOST="https://<workspace>.cloud.databricks.com"
-export DATABRICKS_TOKEN="dapi…"
-export DATABRICKS_REPO_PATH="/Repos/<user-or-svc>/<visualquerybuilder>"
-export APP_NAME="visual-query-builder"
-make deploy
-
-### Security notes
-- Do not commit .env
-- In the workspace, prefer Databricks Secrets over raw env vars
-- The App should read workspace context and secrets at runtime
-
-## 🛠️ Development
-
-### Local Development (Limited)
-
-For development purposes only, you can run the app locally with limited functionality:
+Copy the environment template and configure your settings:
 
 ```bash
-# Set environment variables
-cp .env.example .env
-# Edit .env with your Databricks credentials
+cp env.example .env
+```
 
-# Start development server
+Edit `.env` with your Databricks configuration:
+
+```bash
+# For local development
+DATABRICKS_HOST=dbc-your-workspace.cloud.databricks.com
+DATABRICKS_TOKEN=your-personal-access-token
+DATABRICKS_WAREHOUSE_ID=your-warehouse-id
+
+# For Databricks Apps deployment (auto-configured)
+DATABRICKS_APP_NAME=visual-query-builder
+DATABRICKS_APP_PORT=8000
+```
+
+### 3. Local Development
+
+```bash
 npm run dev
+```
 
-# Start backend server
+The application will be available at `http://localhost:5173`
+
+### 4. Build and Deploy
+
+```bash
+npm run build
 npm start
 ```
 
-**Note**: Local development will show the "Databricks Apps context required" error screen.
+## Databricks Apps Deployment
 
-### Building for Production
+### 1. App Configuration
+
+In your Databricks workspace, create a new app with these settings:
+
+**App Resources:**
+- SQL Warehouse: Your configured warehouse with "Can use" permission
+- Resource key: `sql-warehouse`
+
+**User Authorization Scopes:**
+- `sql` - Execute SQL and manage SQL resources
+- `catalog.connections` - Manage external connections
+- `catalog.catalogs:read` - Read catalogs
+- `catalog.schemas:read` - Read schemas  
+- `catalog.tables:read` - Read tables
+- `dashboards.genie` - Manage Genie spaces
+- `files.files` - Manage files and directories
+
+### 2. Environment Variables
+
+The following environment variables are automatically set by Databricks Apps:
 
 ```bash
+DATABRICKS_APP_NAME=visual-query-builder
+DATABRICKS_APP_PORT=8000
+DATABRICKS_APP_URL=https://your-app.aws.databricksapps.com
+DATABRICKS_CLIENT_ID=your-service-principal-id
+DATABRICKS_CLIENT_SECRET=your-service-principal-secret
+DATABRICKS_HOST=dbc-your-workspace.cloud.databricks.com
+DATABRICKS_SERVER_HOSTNAME=dbc-your-workspace.cloud.databricks.com
+DATABRICKS_WAREHOUSE_ID=your-warehouse-id
+DATABRICKS_WORKSPACE_ID=your-workspace-id
+```
+
+### 3. Deploy
+
+```bash
+# Build the application
 npm run build
+
+# Deploy to Databricks Apps
+# (This is handled by your Databricks Apps deployment process)
 ```
 
-The build output in the `dist/` directory is what gets deployed to Databricks Apps.
+## Authentication Flow
 
-### Updating Deployed App
+### Local Development
+- Uses `DATABRICKS_TOKEN` environment variable
+- Direct connection to Databricks workspace
+- Full access based on personal access token permissions
 
-To deploy updates to your running app:
+### Databricks Apps
+- **Service Principal**: Handles app-level operations
+- **User Token**: Automatically forwarded via `x-forwarded-access-token` header
+- **Permissions**: Respects user's Unity Catalog policies and row-level security
 
-```bash
-# Build the new version
-npm run build
+## API Endpoints
 
-# Deploy the update
-/usr/local/bin/databricks apps deploy visual-query-builder \
-  --source-code-path /Workspace/Users/fpatano@gmail.com/visual-query-builder
-```
+### Unity Catalog
+- `GET /api/unity-catalog/catalogs` - List catalogs
+- `GET /api/unity-catalog/schemas?catalog_name={name}` - List schemas
+- `GET /api/unity-catalog/tables?catalog_name={name}&schema_name={name}` - List tables
+- `GET /api/unity-catalog/columns?catalog_name={name}&schema_name={name}&table_name={name}` - List columns
 
-## 📋 Verification Scripts
+### SQL Execution
+- `POST /api/databricks/2.0/sql/statements` - Execute SQL statement
+- `GET /api/databricks/2.0/sql/statements/{id}` - Get statement status
 
-### Validate Databricks Apps Configuration
+### Warehouse Management
+- `POST /api/warehouse/status` - Check warehouse status
 
-```bash
-node scripts/verify-databricks-apps.js
-```
-
-This script checks:
-- App YAML configuration
-- Package.json dependencies
-- Build output
-- Server configuration
-- Environment setup
-
-### Verify Environment
-
-```bash
-npm run check
-```
-
-Checks environment variables and connectivity.
-
-## 🚨 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
-#### "Not running in Databricks Apps context"
-- **Cause**: App is running on localhost or outside Databricks workspace
-- **Solution**: Deploy as Databricks App and launch from workspace UI
+1. **"No access token found" Error**
+   - Ensure you're running in Databricks Apps environment
+   - Check that user authorization scopes are properly configured
+   - Verify the app has access to the SQL warehouse
 
-#### "Unity Catalog API Error"
-- **Cause**: Insufficient permissions or not in Apps context
-- **Solution**: Verify app permissions and launch from workspace
+2. **Unity Catalog Access Denied**
+   - Verify user has proper permissions in Unity Catalog
+   - Check that required scopes are enabled in app configuration
+   - Ensure row-level security policies allow access
 
-#### "Warehouse not found"
-- **Cause**: Warehouse ID not configured or user lacks access
-- **Solution**: Check warehouse configuration and user permissions
+3. **Warehouse Connection Issues**
+   - Verify warehouse ID is correct
+   - Check warehouse is running and accessible
+   - Ensure app has "Can use" permission on warehouse
 
-### Debug Steps
+### Debug Information
 
-1. **Check browser console** for detailed error messages
-2. **Verify app is launched from Databricks workspace** (not direct URL)
-3. **Check app permissions** in workspace admin settings
-4. **Verify Unity Catalog access** for your user account
-5. **Contact workspace admin** if issues persist
+Enable debug logging by setting `LOG_LEVEL=debug` in your environment.
 
-### Support
+Check the browser console and server logs for detailed error information.
 
-If you continue to experience issues:
+## Security Best Practices
 
-1. Check the browser console for detailed error logs
-2. Verify the app manifest and permissions
-3. Ensure you're launching from the proper Databricks Apps context
-4. Contact your Databricks workspace administrator
-5. Raise a support ticket with Databricks including:
-   - App manifest (`app.yaml`)
-   - Console logs
-   - Environment details
-   - Steps to reproduce
+1. **Never commit `.env` files** to version control
+2. **Use least privilege** for app permissions
+3. **Enable audit logging** for all user operations
+4. **Regularly rotate** service principal credentials
+5. **Monitor app usage** and access patterns
 
-## 📚 API Reference
+## Development
 
-### Unity Catalog Endpoints
+### Project Structure
 
-- `GET /api/databricks/unity-catalog/catalogs` - List catalogs
-- `GET /api/databricks/unity-catalog/schemas` - List schemas
-- `GET /api/databricks/unity-catalog/tables` - List tables
-- `GET /api/databricks/unity-catalog/columns` - List columns
+```
+src/
+├── components/          # React components
+│   ├── canvas/         # Visual query builder
+│   ├── catalog/        # Unity Catalog browser
+│   ├── editor/         # SQL editor
+│   ├── layout/         # Application layout
+│   ├── preview/        # Query results
+│   └── profiling/      # Data profiling
+├── contexts/           # React contexts
+├── services/           # API services
+├── types/              # TypeScript types
+└── utils/              # Utility functions
+```
 
-### SQL Execution
+### Adding New Features
 
-- `POST /api/databricks/2.0/sql/statements` - Execute SQL queries
+1. Create components in appropriate directories
+2. Add types to `src/types/index.ts`
+3. Implement API endpoints in `server.js`
+4. Add frontend services in `src/services/`
+5. Update authentication as needed
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Test in Databricks Apps environment
+4. Add tests if applicable
 5. Submit a pull request
 
-## 📄 License
+## License
 
 [Your License Here]
 
----
+## Support
 
-**Remember**: This app is designed specifically for Databricks Apps and must be deployed and launched from within your Databricks workspace. Running it on localhost will result in context errors and API failures.
+For issues and questions:
+1. Check the troubleshooting section
+2. Review Databricks Apps documentation
+3. Open an issue in the repository
+4. Contact your Databricks administrator

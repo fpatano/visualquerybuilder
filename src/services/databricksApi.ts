@@ -2,7 +2,7 @@ import axios from 'axios';
 import { CatalogItem, QueryResult, DataProfile, ProfileMode } from '../types';
 // Context validation handled by backend
 
-const API_BASE = '/api/databricks';
+const API_BASE = '/api';
 
 // Configure axios defaults for Databricks Apps
 axios.defaults.timeout = 120000; // 2 minutes for complex queries
