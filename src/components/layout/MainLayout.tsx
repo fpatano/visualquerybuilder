@@ -1,16 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import EnhancedVisualCanvas from '../canvas/EnhancedVisualCanvas';
 import EnhancedSQLEditor from '../editor/EnhancedSQLEditor';
 import CatalogExplorer from '../catalog/CatalogExplorer';
-import ProfilingPane from '../profiling/ProfilingPane';
 import QueryPreview from '../preview/QueryPreview';
 import Header from './Header';
 import { useQueryBuilder } from '../../contexts/QueryBuilderContext';
 
 const MainLayout: React.FC = () => {
   const [activeView, setActiveView] = useState<'canvas' | 'editor' | 'split'>('split');
-  const [rightPanelHeights, setRightPanelHeights] = useState({ profiling: 50, results: 50 }); // Default to 50/50
-  const [isDragging, setIsDragging] = useState(false);
   const { state, dispatch, executeQuery } = useQueryBuilder();
 
   // Handle SQL query changes from the editor
@@ -24,66 +21,6 @@ const MainLayout: React.FC = () => {
       await executeQuery(true); // true for preview mode
     }
   };
-
-  // Handle right panel resizing
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging) return;
-    
-    const container = e.currentTarget.parentElement;
-    if (!container) return;
-    
-    const rect = container.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const height = rect.height;
-    const profilingHeight = (y / height) * 100;
-    const resultsHeight = 100 - profilingHeight;
-    
-    // Clamp heights between 20% and 80%
-    if (profilingHeight >= 20 && profilingHeight <= 80) {
-      setRightPanelHeights({ profiling: profilingHeight, results: resultsHeight });
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
-
-  // Add global mouse event listeners for dragging
-  React.useEffect(() => {
-    if (isDragging) {
-      const handleGlobalMouseMove = (e: MouseEvent) => {
-        const container = document.querySelector('.right-sidebar');
-        if (!container) return;
-        
-        const rect = container.getBoundingClientRect();
-        const y = e.clientY - rect.top;
-        const height = rect.height;
-        const profilingHeight = (y / height) * 100;
-        const resultsHeight = 100 - profilingHeight;
-        
-        if (profilingHeight >= 20 && profilingHeight <= 80) {
-          setRightPanelHeights({ profiling: profilingHeight, results: resultsHeight });
-        }
-      };
-      
-      const handleGlobalMouseUp = () => {
-        setIsDragging(false);
-      };
-      
-      document.addEventListener('mousemove', handleGlobalMouseMove);
-      document.addEventListener('mouseup', handleGlobalMouseUp);
-      
-      return () => {
-        document.removeEventListener('mousemove', handleGlobalMouseMove);
-        document.removeEventListener('mouseup', handleGlobalMouseUp);
-      };
-    }
-  }, [isDragging]);
 
   return (
     <div className="h-screen flex flex-col bg-databricks-light-gray">
@@ -166,31 +103,10 @@ const MainLayout: React.FC = () => {
           )}
         </div>
         
-        {/* Right Sidebar - Profiling & Preview */}
-        <div className="w-96 flex flex-col right-sidebar">
-          {/* Data Profiling Pane */}
-          <div 
-            className="preview-pane border-b"
-            style={{ height: `${rightPanelHeights.profiling}%` }}
-          >
-            <ProfilingPane />
-          </div>
-          
-          {/* Drag Handle */}
-          <div 
-            className="h-1 bg-gray-300 cursor-ns-resize hover:bg-blue-400 transition-colors flex items-center justify-center"
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-          >
-            <div className="w-8 h-0.5 bg-gray-400 rounded"></div>
-          </div>
-          
-          {/* Query Preview */}
-          <div 
-            className="preview-pane"
-            style={{ height: `${rightPanelHeights.results}%` }}
-          >
+        {/* Right Sidebar - Query Results Only */}
+        <div className="w-96 flex flex-col">
+          {/* Query Preview - Full Height */}
+          <div className="h-full preview-pane">
             <QueryPreview />
           </div>
         </div>
