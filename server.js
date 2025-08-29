@@ -59,7 +59,7 @@ app.get('/api/warehouse/test', (req, res) => {
   });
 });
 
-// Serve the React app for all other routes (SPA routing)
+// Serve the React app for all other routes (SPA routing) - Updated for Databricks Apps deployment
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
