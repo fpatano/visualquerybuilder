@@ -109,24 +109,48 @@ async function ensureWarehouseRunning(): Promise<boolean> {
   }
 }
 
+// NEW: Bootstrap catalog function to replace UC API calls
+export async function bootstrapCatalog(): Promise<{
+  catalog: CatalogItem[];
+  metadata: any;
+}> {
+  try {
+    console.log('🚀 Bootstrapping complete catalog...');
+    const response = await axios.get(`${API_BASE}/catalog/bootstrap`);
+    
+    console.log('✅ Catalog bootstrap complete:', response.data.metadata);
+    return response.data;
+    
+  } catch (error) {
+    console.error('Catalog bootstrap failed:', error);
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status;
+      const msg = error.response?.data?.message || error.message;
+      console.error(`Bootstrap API Error ${status}:`, error.response?.data);
+      throw new Error(`Catalog bootstrap failed (${status}): ${msg}`);
+    }
+    throw error;
+  }
+}
+
 export async function fetchCatalogMetadata(): Promise<CatalogItem[]> {
   try {
     console.log('🚀 UPDATED CODE: Fetching catalogs from Databricks Unity Catalog...');
     console.log('🔍 This should show if the updated code is deployed');
     
-    // Backend will handle authentication and context validation
-    const catalogsResponse = await axios.get(`${API_BASE}/unity-catalog/catalogs`);
-    console.log('Catalogs response:', catalogsResponse.data);
+    // Use bootstrap instead of UC API
+    const bootstrapResult = await bootstrapCatalog();
+    console.log('Catalogs response:', bootstrapResult.catalog);
     
-    const catalogs: CatalogItem[] = (catalogsResponse.data.catalogs || [])
+    const catalogs: CatalogItem[] = bootstrapResult.catalog
       .filter((catalog: any) => catalog.name !== 'system') // Skip system catalog for performance
       .map((catalog: any) => ({
         id: catalog.name,
         name: catalog.name,
         type: 'catalog' as const,
-        children: [], // Will be loaded lazily
+        children: catalog.children || [], // Already loaded from bootstrap
         comment: catalog.comment,
-        isLoaded: false // Track if children are loaded
+        isLoaded: true // Mark as loaded since we have all data
       }));
     
     console.log('Successfully fetched catalog list:', catalogs.map(c => c.name));
@@ -137,8 +161,8 @@ export async function fetchCatalogMetadata(): Promise<CatalogItem[]> {
     if (axios.isAxiosError(error)) {
       const status = error.response?.status;
       const msg = error.response?.data?.message || error.message;
-      console.error(`Unity Catalog API Error ${status}:`, error.response?.data);
-      throw new Error(`Unity Catalog list failed (${status}): ${msg}`);
+      console.error(`Bootstrap API Error ${status}:`, error.response?.data);
+      throw new Error(`Catalog bootstrap failed (${status}): ${msg}`);
     }
     throw error;
   }
@@ -146,19 +170,27 @@ export async function fetchCatalogMetadata(): Promise<CatalogItem[]> {
 
 export async function fetchSchemas(catalogName: string): Promise<CatalogItem[]> {
   try {
-    const schemasResponse = await axios.get(`${API_BASE}/unity-catalog/schemas?catalog_name=${catalogName}`);
-    console.log(`Schemas for ${catalogName}:`, schemasResponse.data);
+    // Use cached data from bootstrap instead of API call
+    const bootstrapResult = await bootstrapCatalog();
+    const catalog = bootstrapResult.catalog.find(c => c.name === catalogName);
     
-    return (schemasResponse.data.schemas || [])
+    if (!catalog) {
+      console.warn(`Catalog ${catalogName} not found in bootstrap data`);
+      return [];
+    }
+    
+    console.log(`Schemas for ${catalogName}:`, catalog.children);
+    
+    return catalog.children
       .filter((schema: any) => schema.name !== 'information_schema') // Skip system schemas
       .map((schema: any) => ({
         id: `${catalogName}.${schema.name}`,
         name: schema.name,
         type: 'schema' as const,
         parent: catalogName,
-        children: [],
+        children: schema.children || [], // Already loaded from bootstrap
         comment: schema.comment,
-        isLoaded: false
+        isLoaded: true // Mark as loaded since we have all data
       }));
   } catch (error) {
     console.error(`Failed to fetch schemas for catalog ${catalogName}:`, error);
@@ -168,18 +200,27 @@ export async function fetchSchemas(catalogName: string): Promise<CatalogItem[]> 
 
 export async function fetchTables(catalogName: string, schemaName: string): Promise<CatalogItem[]> {
   try {
-    const tablesResponse = await axios.get(`${API_BASE}/unity-catalog/tables?catalog_name=${catalogName}&schema_name=${schemaName}`);
-    console.log(`Tables for ${catalogName}.${schemaName}:`, tablesResponse.data);
+    // Use cached data from bootstrap instead of API call
+    const bootstrapResult = await bootstrapCatalog();
+    const catalog = bootstrapResult.catalog.find(c => c.name === catalogName);
+    const schema = catalog?.children?.find(s => s.name === schemaName);
     
-    return (tablesResponse.data.tables || [])
+    if (!schema) {
+      console.warn(`Schema ${catalogName}.${schemaName} not found in bootstrap data`);
+      return [];
+    }
+    
+    console.log(`Tables for ${catalogName}.${schemaName}:`, schema.children);
+    
+    return schema.children
       .map((table: any) => ({
         id: `${catalogName}.${schemaName}.${table.name}`,
         name: table.name,
         type: 'table' as const,
         parent: `${catalogName}.${schemaName}`,
-        children: [],
+        children: table.children || [], // Already loaded from bootstrap
         comment: table.comment,
-        isLoaded: false
+        isLoaded: true // Mark as loaded since we have all data
       }));
   } catch (error) {
     console.error(`Failed to fetch tables for ${catalogName}.${schemaName}:`, error);
@@ -189,16 +230,26 @@ export async function fetchTables(catalogName: string, schemaName: string): Prom
 
 export async function fetchColumns(catalogName: string, schemaName: string, tableName: string): Promise<CatalogItem[]> {
   try {
-    const columnsResponse = await axios.get(`${API_BASE}/unity-catalog/columns?catalog_name=${catalogName}&schema_name=${schemaName}&table_name=${tableName}`);
-    console.log(`Columns for ${catalogName}.${schemaName}.${tableName}:`, columnsResponse.data);
+    // Use cached data from bootstrap instead of API call
+    const bootstrapResult = await bootstrapCatalog();
+    const catalog = bootstrapResult.catalog.find(c => c.name === catalogName);
+    const schema = catalog?.children?.find(s => s.name === schemaName);
+    const table = schema?.children?.find(t => t.name === tableName);
     
-    return (columnsResponse.data.columns || [])
+    if (!table) {
+      console.warn(`Table ${catalogName}.${schemaName}.${tableName} not found in bootstrap data`);
+      return [];
+    }
+    
+    console.log(`Columns for ${catalogName}.${schemaName}.${tableName}:`, table.children);
+    
+    return table.children
       .map((column: any) => ({
         id: `${catalogName}.${schemaName}.${tableName}.${column.name}`,
         name: column.name,
         type: 'column' as const,
         parent: `${catalogName}.${schemaName}.${tableName}`,
-        dataType: column.type_text,
+        dataType: column.dataType,
         comment: column.comment,
         isLoaded: true
       }));

@@ -11,6 +11,9 @@ dotenv.config();
 // Validate authentication environment on startup
 import { validateAuthEnvironment, logAuthEnvironment } from './src/utils/auth-utils.js';
 
+// Import local catalog services
+// Bootstrap catalog approach - no additional services needed
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -20,6 +23,9 @@ const PORT = Number(process.env.PORT || process.env.DATABRICKS_APP_PORT || 8000)
 // Trust proxy for Databricks deployment
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
+
+// Bootstrap catalog approach - no local catalog services needed
+console.log('🚀 Using bootstrap catalog approach');
 
 // Basic middleware
 app.use(express.json());
@@ -312,329 +318,154 @@ app.post('/api/warehouse/wait-ready', async (req, res) => {
   }
 });
 
-// Unity Catalog API endpoints with real Databricks implementation
-app.get('/api/unity-catalog/catalogs', async (req, res) => {
+// OLD UC API endpoints removed - using bootstrap approach instead
+
+// OLD UC API endpoints removed - using bootstrap approach instead
+
+// NEW: Bootstrap endpoint to replace all UC API calls
+app.get('/api/catalog/bootstrap', async (req, res) => {
   try {
-    if (!req.isDatabricksApps) {
-      // Local development - use personal access token
-      const localToken = process.env.DATABRICKS_TOKEN;
-      if (!localToken) {
-        return res.status(500).json({ error: 'DATABRICKS_TOKEN required for local development' });
-      }
-      
-      const host = process.env.DATABRICKS_HOST;
-      if (!host) {
-        return res.status(500).json({ error: 'DATABRICKS_HOST required for local development' });
-      }
-      
-      // Use Databricks REST API to get catalogs
-      const response = await fetch(`${host}/api/2.1/unity-catalog/catalogs`, {
-        headers: {
-          'Authorization': `Bearer ${localToken}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch catalogs: ${response.status}`);
-      }
-
-      const data = await response.json();
-      res.json({ catalogs: data.catalogs || [] });
-      return;
-    }
-
-    const userToken = await getUserToken(req);
-    const host = getDatabricksHost();
+    console.log('🚀 Bootstrapping complete catalog metadata...');
     
-    // Use Databricks REST API to get catalogs
-    const response = await fetch(`${host}/api/2.1/unity-catalog/catalogs`, {
+    // Execute simplified catalog query using warehouse API
+    const catalogQuery = `
+      SELECT 
+        catalog_name,
+        schema_name,
+        table_name,
+        column_name,
+        data_type,
+        is_nullable,
+        ordinal_position
+      FROM system.information_schema.columns
+      WHERE catalog_name NOT IN ('system', 'information_schema')
+        AND schema_name NOT IN ('information_schema')
+      ORDER BY catalog_name, schema_name, table_name, ordinal_position
+    `;
+    
+    // Execute via warehouse API (not UC API)
+    const warehouse_id = process.env.DATABRICKS_WAREHOUSE_ID;
+    if (!warehouse_id) {
+      throw new Error('DATABRICKS_WAREHOUSE_ID not configured');
+    }
+    
+    // Use existing SQL execution infrastructure
+    const token = req.isDatabricksApps ? await getUserToken(req) : process.env.DATABRICKS_TOKEN;
+    const response = await fetch(`${getDatabricksHost()}/api/2.0/sql/statements`, {
+      method: 'POST',
       headers: {
-        'Authorization': `Bearer ${userToken}`,
+        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
-      }
+      },
+      body: JSON.stringify({
+        statement: catalogQuery,
+        warehouse_id,
+        wait_timeout: '50s', // Maximum allowed timeout for bootstrap
+        disposition: 'INLINE'
+      })
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch catalogs: ${response.status}`);
+      const errorData = await response.json();
+      throw new Error(`Bootstrap query failed: ${response.status} - ${errorData.message || 'Unknown error'}`);
     }
 
-    const data = await response.json();
-    res.json({ catalogs: data.catalogs || [] });
+    const result = await response.json();
+    console.log('✅ Bootstrap query executed successfully');
+    console.log('🔍 Result structure:', JSON.stringify(result.result, null, 2));
+    
+    // Transform nested result to flat catalog structure for frontend compatibility
+    const catalog = transformBootstrapResult(result.result);
+    
+    res.json({ 
+      catalog,
+      metadata: {
+        totalCatalogs: catalog.length,
+        totalSchemas: catalog.reduce((sum, cat) => sum + cat.children.length, 0),
+        totalTables: catalog.reduce((sum, cat) => 
+          sum + cat.children.reduce((s, sch) => s + sch.children.length, 0), 0),
+        loadedAt: new Date().toISOString()
+      }
+    });
+    
   } catch (error) {
-    console.error('Failed to fetch catalogs:', error);
+    console.error('Catalog bootstrap failed:', error);
     res.status(500).json({ 
-      error: 'Failed to fetch catalogs',
+      error: 'Failed to bootstrap catalog',
       message: error.message 
     });
   }
 });
 
-app.get('/api/unity-catalog/schemas', async (req, res) => {
-  try {
-    const { catalog_name } = req.query;
-    
-    if (!catalog_name) {
-      return res.status(400).json({ error: 'catalog_name parameter is required' });
-    }
-
-    if (!req.isDatabricksApps) {
-      // Local development - use personal access token
-      const localToken = process.env.DATABRICKS_TOKEN;
-      if (!localToken) {
-        return res.status(500).json({ error: 'DATABRICKS_TOKEN required for local development' });
-      }
-      
-      const host = process.env.DATABRICKS_HOST;
-      if (!host) {
-        return res.status(500).json({ error: 'DATABRICKS_HOST required for local development' });
-      }
-      
-      // Use Databricks REST API to get schemas
-      const response = await fetch(`${host}/api/2.1/unity-catalog/schemas?catalog_name=${catalog_name}`, {
-        headers: {
-          'Authorization': `Bearer ${localToken}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch schemas: ${response.status}`);
-      }
-
-      const data = await response.json();
-      res.json({ schemas: data.schemas || [] });
-      return;
-    }
-
-    // Databricks Apps - use forwarded user token
-    const userToken = await getUserToken(req);
-    const host = getDatabricksHost();
-    
-    // Use Databricks REST API to get schemas
-    const response = await fetch(`${host}/api/2.1/unity-catalog/schemas?catalog_name=${catalog_name}`, {
-      headers: {
-        'Authorization': `Bearer ${userToken}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch schemas: ${response.status}`);
-    }
-
-    const data = await response.json();
-    res.json({ schemas: data.schemas || [] });
-  } catch (error) {
-    console.error('Failed to fetch schemas:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch schemas',
-      message: error.message 
-    });
+// Helper function to transform flat bootstrap result to hierarchical catalog structure
+function transformBootstrapResult(result) {
+  if (!result || !result.data_array) {
+    console.log('🔍 No result or data_array found:', result);
+    return [];
   }
-});
-
-app.get('/api/unity-catalog/tables', async (req, res) => {
-  try {
-    const { catalog_name, schema_name } = req.query;
+  
+  console.log('🔍 Processing data_array with', result.data_array.length, 'rows');
+  const catalogMap = new Map();
+  
+  // Process the flat result structure
+  result.data_array.forEach((row, index) => {
+    const [catalogName, schemaName, tableName, columnName, dataType, isNullable, ordinalPosition] = row;
     
-    if (!catalog_name || !schema_name) {
-      return res.status(400).json({ error: 'Both catalog_name and schema_name parameters are required' });
-    }
-
-    if (!req.isDatabricksApps) {
-      // Local development - use personal access token
-      const localToken = process.env.DATABRICKS_TOKEN;
-      if (!localToken) {
-        return res.status(500).json({ error: 'DATABRICKS_TOKEN required for local development' });
-      }
-      
-      const host = process.env.DATABRICKS_HOST;
-      if (!host) {
-        return res.status(500).json({ error: 'DATABRICKS_HOST required for local development' });
-      }
-      
-      // Use Databricks REST API to get tables
-      const response = await fetch(`${host}/api/2.1/unity-catalog/tables?catalog_name=${catalog_name}&schema_name=${schema_name}`, {
-        headers: {
-          'Authorization': `Bearer ${localToken}`,
-          'Content-Type': 'application/json'
-        }
+    // Create or get catalog
+    if (!catalogMap.has(catalogName)) {
+      catalogMap.set(catalogName, {
+        id: catalogName,
+        name: catalogName,
+        type: 'catalog',
+        children: []
       });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch tables: ${response.status}`);
-      }
-
-      const data = await response.json();
-      res.json({ tables: data.tables || [] });
-      return;
     }
-
-    const userToken = await getUserToken(req);
-    const host = getDatabricksHost();
     
-    // Use Databricks REST API to get tables
-    const response = await fetch(`${host}/api/2.1/unity-catalog/tables?catalog_name=${catalog_name}&schema_name=${schema_name}`, {
-      headers: {
-        'Authorization': `Bearer ${userToken}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch tables: ${response.status}`);
-    }
-
-    const data = await response.json();
-    res.json({ tables: data.tables || [] });
-  } catch (error) {
-    console.error('Failed to fetch tables:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch tables',
-      message: error.message 
-    });
-  }
-});
-
-app.get('/api/unity-catalog/columns', async (req, res) => {
-  try {
-    const { catalog_name, schema_name, table_name } = req.query;
+    const catalogObj = catalogMap.get(catalogName);
     
-    if (!catalog_name || !schema_name || !table_name) {
-      return res.status(400).json({ error: 'catalog_name, schema_name, and table_name parameters are required' });
+    // Create or get schema
+    let schemaObj = catalogObj.children.find(s => s.name === schemaName);
+    if (!schemaObj) {
+      schemaObj = {
+        id: `${catalogName}.${schemaName}`,
+        name: schemaName,
+        type: 'schema',
+        parent: catalogName,
+        children: []
+      };
+      catalogObj.children.push(schemaObj);
     }
-
-    if (!req.isDatabricksApps) {
-      // Local development - use personal access token
-      const localToken = process.env.DATABRICKS_TOKEN;
-      if (!localToken) {
-        return res.status(500).json({ error: 'DATABRICKS_TOKEN required for local development' });
-      }
-      
-      const host = process.env.DATABRICKS_HOST;
-      if (!host) {
-        return res.status(500).json({ error: 'DATABRICKS_HOST required for local development' });
-      }
-      
-      // Use Databricks REST API to get table metadata
-      const response = await fetch(`${host}/api/2.1/unity-catalog/tables/${catalog_name}.${schema_name}.${table_name}`, {
-        headers: {
-          'Authorization': `Bearer ${localToken}`,
-          'Content-Type': 'application/json'
-        }
+    
+    // Create or get table
+    let tableObj = schemaObj.children.find(t => t.name === tableName);
+    if (!tableObj) {
+      tableObj = {
+        id: `${catalogName}.${schemaName}.${tableName}`,
+        name: tableName,
+        type: 'table',
+        parent: `${catalogName}.${schemaName}`,
+        children: []
+      };
+      schemaObj.children.push(tableObj);
+    }
+    
+    // Add column if it doesn't exist
+    const columnExists = tableObj.children.find(c => c.name === columnName);
+    if (!columnExists) {
+      tableObj.children.push({
+        id: `${catalogName}.${schemaName}.${tableName}.${columnName}`,
+        name: columnName,
+        type: 'column',
+        parent: `${catalogName}.${schemaName}.${tableName}`,
+        dataType: dataType,
+        nullable: isNullable === 'YES',
+        ordinalPosition: parseInt(ordinalPosition)
       });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch table metadata: ${response.status}`);
-      }
-
-      const table = await response.json();
-      console.log(`📊 Table metadata for ${catalog_name}.${schema_name}.${table_name}:`, JSON.stringify(table, null, 2));
-      
-      // Extract columns from the table schema
-      let columns = [];
-      
-      // Try different possible locations for column information
-      if (table.schema && table.schema.fields) {
-        // Standard schema format
-        columns = table.schema.fields.map(field => ({
-          name: field.name,
-          type_text: field.type,
-          comment: field.metadata?.comment || field.comment || ''
-        }));
-      } else if (table.columns) {
-        // Direct columns array
-        columns = table.columns.map(col => ({
-          name: col.name,
-          type_text: col.type || col.type_text,
-          comment: col.comment || ''
-        }));
-      } else if (table.storage_properties && table.storage_properties.columns) {
-        // Storage properties columns
-        columns = table.storage_properties.columns.map(col => ({
-          name: col.name,
-          type_text: col.type || col.type_text,
-          comment: col.comment || ''
-        }));
-      } else if (table.data_schema && table.data_schema.fields) {
-        // Data schema format
-        columns = table.data_schema.fields.map(field => ({
-          name: field.name,
-          type_text: field.type,
-          comment: field.metadata?.comment || field.comment || ''
-        }));
-      }
-      
-      console.log(`📋 Extracted ${columns.length} columns from table metadata`);
-      
-      res.json({ columns: columns });
-      return;
     }
-
-    const userToken = await getUserToken(req);
-    const host = getDatabricksHost();
-    
-    // Use Databricks REST API to get columns
-    const response = await fetch(`${host}/api/2.1/unity-catalog/tables/${catalog_name}.${schema_name}.${table_name}`, {
-      headers: {
-        'Authorization': `Bearer ${userToken}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch table metadata: ${response.status}`);
-    }
-
-    const table = await response.json();
-    console.log(`📊 Table metadata for ${catalog_name}.${schema_name}.${table_name}:`, JSON.stringify(table, null, 2));
-    
-    // Extract columns from the table schema
-    let columns = [];
-    
-    // Try different possible locations for column information
-    if (table.schema && table.schema.fields) {
-      // Standard schema format
-      columns = table.schema.fields.map(field => ({
-        name: field.name,
-        type_text: field.type,
-        comment: field.metadata?.comment || field.comment || ''
-      }));
-    } else if (table.columns) {
-      // Direct columns array
-      columns = table.columns.map(col => ({
-        name: col.name,
-        type_text: col.type || col.type_text,
-        comment: col.comment || ''
-      }));
-    } else if (table.storage_properties && table.storage_properties.columns) {
-      // Storage properties columns
-      columns = table.storage_properties.columns.map(col => ({
-        name: col.name,
-        type_text: col.type || col.type_text,
-        comment: col.comment || ''
-      }));
-    } else if (table.data_schema && table.data_schema.fields) {
-      // Data schema format
-      columns = table.data_schema.fields.map(field => ({
-        name: field.name,
-        type_text: field.type,
-        comment: field.metadata?.comment || field.comment || ''
-      }));
-    }
-    
-    console.log(`📋 Extracted ${columns.length} columns from table metadata`);
-    
-    res.json({ columns: columns });
-  } catch (error) {
-    console.error('Failed to fetch columns:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch columns',
-      message: error.message 
-    });
-  }
-});
+  });
+  
+  return Array.from(catalogMap.values());
+}
 
 // Databricks SQL API 2.0 endpoints
 app.post('/api/databricks/2.0/sql/statements', async (req, res) => {

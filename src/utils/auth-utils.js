@@ -4,7 +4,8 @@
  */
 
 /**
- * Get service principal token via OAuth client_credentials flow
+ * Get service principal token using Databricks API
+ * In Databricks Apps, service principal credentials are used to create tokens
  */
 export async function getServicePrincipalToken() {
   try {
@@ -20,34 +21,34 @@ export async function getServicePrincipalToken() {
       throw new Error('DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET are required for service principal authentication');
     }
 
-    const url = `${host}/api/2.0/token/create`;
-    const body = JSON.stringify({
-      comment: 'Service principal token for Visual Query Builder',
-      lifetime_seconds: 3600 // 1 hour
-    });
-
-    console.log('🔑 Requesting service principal token...');
-    const response = await fetch(url, {
+    console.log('🔑 Creating service principal token via Databricks API...');
+    
+    // Create a token using the service principal credentials
+    const response = await fetch(`${host}/api/2.0/token/create`, {
       method: 'POST',
       headers: { 
         'Authorization': `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
-        'Content-Type': 'application/json' 
+        'Content-Type': 'application/json'
       },
-      body
+      body: JSON.stringify({
+        comment: 'Service principal token for Visual Query Builder',
+        lifetime_seconds: 3600 // 1 hour
+      })
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Service principal token request failed: ${response.status} - ${errorText}`);
+      console.error('🔍 Full error response:', errorText);
+      throw new Error(`Service principal token creation failed: ${response.status} - ${errorText}`);
     }
 
     const tokenData = await response.json();
-    if (!tokenData.access_token) {
-      throw new Error('No access_token in service principal response');
+    if (!tokenData.token_value) {
+      throw new Error('No token_value in service principal response');
     }
 
-    console.log('✅ Service principal token obtained successfully');
-    return tokenData.access_token;
+    console.log('✅ Service principal token created successfully');
+    return tokenData.token_value;
   } catch (error) {
     console.error('❌ Failed to get service principal token:', error);
     throw new Error(`Service principal authentication failed: ${error.message}`);
