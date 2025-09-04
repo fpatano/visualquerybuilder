@@ -8,6 +8,9 @@ import dotenv from 'dotenv';
 // Load environment variables from .env file
 dotenv.config();
 
+// Validate authentication environment on startup
+import { validateAuthEnvironment, logAuthEnvironment } from './src/utils/auth-utils.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -108,7 +111,7 @@ app.post('/api/warehouse/status', async (req, res) => {
     }
 
     // Databricks Apps - use forwarded user token
-    const userToken = getUserToken(req);
+    const userToken = await getUserToken(req);
     const host = getDatabricksHost();
     
     // Use Databricks REST API to check warehouse status
@@ -177,7 +180,7 @@ app.post('/api/warehouse/start', async (req, res) => {
     }
 
     // Databricks Apps - use forwarded user token
-    const userToken = getUserToken(req);
+    const userToken = await getUserToken(req);
     const host = getDatabricksHost();
     
     // Start the warehouse
@@ -263,7 +266,7 @@ app.post('/api/warehouse/wait-ready', async (req, res) => {
     }
 
     // Databricks Apps - use forwarded user token
-    const userToken = getUserToken(req);
+    const userToken = await getUserToken(req);
     const host = getDatabricksHost();
     
     // Poll warehouse status until ready
@@ -341,7 +344,7 @@ app.get('/api/unity-catalog/catalogs', async (req, res) => {
       return;
     }
 
-    const userToken = getUserToken(req);
+    const userToken = await getUserToken(req);
     const host = getDatabricksHost();
     
     // Use Databricks REST API to get catalogs
@@ -405,7 +408,7 @@ app.get('/api/unity-catalog/schemas', async (req, res) => {
     }
 
     // Databricks Apps - use forwarded user token
-    const userToken = getUserToken(req);
+    const userToken = await getUserToken(req);
     const host = getDatabricksHost();
     
     // Use Databricks REST API to get schemas
@@ -468,7 +471,7 @@ app.get('/api/unity-catalog/tables', async (req, res) => {
       return;
     }
 
-    const userToken = getUserToken(req);
+    const userToken = await getUserToken(req);
     const host = getDatabricksHost();
     
     // Use Databricks REST API to get tables
@@ -569,7 +572,7 @@ app.get('/api/unity-catalog/columns', async (req, res) => {
       return;
     }
 
-    const userToken = getUserToken(req);
+    const userToken = await getUserToken(req);
     const host = getDatabricksHost();
     
     // Use Databricks REST API to get columns
@@ -679,7 +682,7 @@ app.post('/api/databricks/2.0/sql/statements', async (req, res) => {
       return;
     }
 
-    const userToken = getUserToken(req);
+    const userToken = await getUserToken(req);
     const host = getDatabricksHost();
     
     // Use Databricks SQL API 2.0 to execute statement
@@ -747,7 +750,7 @@ app.get('/api/databricks/2.0/sql/statements/:statementId', async (req, res) => {
       return;
     }
 
-    const userToken = getUserToken(req);
+    const userToken = await getUserToken(req);
     const host = getDatabricksHost();
     
     // Use Databricks SQL API 2.0 to get statement status
@@ -791,6 +794,15 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Warehouse ID: ${process.env.DATABRICKS_WAREHOUSE_ID || 'Not set'}`);
   console.log(`Static files served from: ${path.join(__dirname, 'dist')}`);
   console.log(`Databricks Apps Environment: ${isDatabricksApps() ? 'Yes' : 'No'}`);
+  
+  // Validate and log authentication environment
+  try {
+    validateAuthEnvironment();
+    logAuthEnvironment();
+  } catch (error) {
+    console.error('❌ Authentication environment validation failed:', error.message);
+    console.error('Please check your environment configuration');
+  }
 });
 
 // Graceful shutdown handling

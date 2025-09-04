@@ -4,15 +4,76 @@
  */
 
 /**
+ * Get service principal token via OAuth client_credentials flow
+ */
+export async function getServicePrincipalToken() {
+  try {
+    const host = getDatabricksHost();
+    if (!host) {
+      throw new Error('DATABRICKS_HOST or DATABRICKS_SERVER_HOSTNAME not configured');
+    }
+
+    const clientId = process.env.DATABRICKS_CLIENT_ID;
+    const clientSecret = process.env.DATABRICKS_CLIENT_SECRET;
+    
+    if (!clientId || !clientSecret) {
+      throw new Error('DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET are required for service principal authentication');
+    }
+
+    const url = `${host}/api/2.0/token/create`;
+    const body = JSON.stringify({
+      comment: 'Service principal token for Visual Query Builder',
+      lifetime_seconds: 3600 // 1 hour
+    });
+
+    console.log('🔑 Requesting service principal token...');
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+        'Content-Type': 'application/json' 
+      },
+      body
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Service principal token request failed: ${response.status} - ${errorText}`);
+    }
+
+    const tokenData = await response.json();
+    if (!tokenData.access_token) {
+      throw new Error('No access_token in service principal response');
+    }
+
+    console.log('✅ Service principal token obtained successfully');
+    return tokenData.access_token;
+  } catch (error) {
+    console.error('❌ Failed to get service principal token:', error);
+    throw new Error(`Service principal authentication failed: ${error.message}`);
+  }
+}
+
+/**
  * Extract user token from request headers
  * In Databricks Apps: token comes from forwarded header
  * In local development: use personal access token from env
+ * When USE_SERVICE_PRINCIPAL=1 (default): use service principal token
  */
-export function getUserToken(req) {
+export async function getUserToken(req) {
+  // Check if service principal mode is enabled (default: true)
+  const useServicePrincipal = process.env.USE_SERVICE_PRINCIPAL !== '0';
+  
+  if (useServicePrincipal) {
+    console.log('🔑 Using service principal authentication mode');
+    return await getServicePrincipalToken();
+  }
+
   // Check if this request has Databricks Apps headers
   const isRequestFromDatabricksApps = req.isDatabricksApps;
   
   console.log('🔍 Token Detection:');
+  console.log(`  - Service Principal Mode: ${useServicePrincipal ? '✅' : '❌'}`);
   console.log(`  - Request has Databricks Apps headers: ${isRequestFromDatabricksApps}`);
   console.log(`  - Environment detection: ${isDatabricksApps()}`);
   
@@ -149,6 +210,26 @@ export function getDatabricksHttpPath() {
  * Validate that required environment variables are set for the current environment
  */
 export function validateAuthEnvironment() {
+  const useServicePrincipal = process.env.USE_SERVICE_PRINCIPAL !== '0';
+  
+  if (useServicePrincipal) {
+    // Service principal mode requires client ID, secret, and warehouse ID
+    if (!process.env.DATABRICKS_CLIENT_ID) {
+      throw new Error('DATABRICKS_CLIENT_ID is required for service principal authentication');
+    }
+    if (!process.env.DATABRICKS_CLIENT_SECRET) {
+      throw new Error('DATABRICKS_CLIENT_SECRET is required for service principal authentication');
+    }
+    if (!process.env.DATABRICKS_WAREHOUSE_ID) {
+      throw new Error('DATABRICKS_WAREHOUSE_ID is required for service principal authentication');
+    }
+    if (!process.env.DATABRICKS_HOST && !process.env.DATABRICKS_SERVER_HOSTNAME) {
+      throw new Error('DATABRICKS_HOST or DATABRICKS_SERVER_HOSTNAME is required for service principal authentication');
+    }
+    console.log('✅ Service principal environment validation passed');
+    return true;
+  }
+  
   if (isDatabricksApps()) {
     // In Databricks Apps, we only need warehouse ID
     // Authentication comes from x-forwarded-access-token header
@@ -177,13 +258,20 @@ export function validateAuthEnvironment() {
  * Log authentication environment info (without sensitive data)
  */
 export function logAuthEnvironment() {
+  const useServicePrincipal = process.env.USE_SERVICE_PRINCIPAL !== '0';
+  
   console.log('🔐 Authentication Environment:');
+  console.log(`  - Service Principal Mode: ${useServicePrincipal ? '✅' : '❌'}`);
   console.log(`  - Environment: ${isDatabricksApps() ? 'Databricks Apps' : 'Local Development'}`);
   console.log(`  - Host: ${getDatabricksHost()}`);
   console.log(`  - HTTP Path: ${getDatabricksHttpPath()}`);
   console.log(`  - Warehouse ID: ${process.env.DATABRICKS_WAREHOUSE_ID}`);
   
-  if (isDatabricksApps()) {
+  if (useServicePrincipal) {
+    console.log('  - Token Source: Service Principal (OAuth client_credentials)');
+    console.log(`  - Client ID: ${process.env.DATABRICKS_CLIENT_ID ? '✅ Set' : '❌ Not set'}`);
+    console.log(`  - Client Secret: ${process.env.DATABRICKS_CLIENT_SECRET ? '✅ Set' : '❌ Not set'}`);
+  } else if (isDatabricksApps()) {
     console.log('  - Token Source: x-forwarded-access-token header');
   } else {
     console.log('  - Token Source: DATABRICKS_TOKEN environment variable');

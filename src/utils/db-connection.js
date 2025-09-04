@@ -12,7 +12,7 @@ import { getUserToken, getDatabricksHost, getDatabricksHttpPath } from './auth-u
 export async function createConnection(req) {
   try {
     // ALWAYS use forwarded access token for on-behalf-of-user auth in Apps
-    const userToken = getUserToken(req);
+    const userToken = await getUserToken(req);
     const host = getDatabricksHost();
     const path = getDatabricksHttpPath();
     

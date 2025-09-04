@@ -106,15 +106,25 @@ The repository includes 3 curated TPC-DS sample queries to get you started:
 
 ## Architecture
 
-This application uses a **dual authentication model**:
+This application uses a **flexible authentication model** with three modes:
 
-1. **Service Principal Authentication** (App-level operations)
-   - Used for: App configuration, logging, shared resources
-   - Configured via: `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET` (auto-configured in Databricks Apps)
+### Default Mode: Service Principal (Recommended)
+- **Used for**: Unity Catalog access, SQL queries (runs as service principal)
+- **Authentication**: Service principal token via OAuth client_credentials
+- **Benefits**: Consistent permissions, no user context required
+- **Configuration**: `USE_SERVICE_PRINCIPAL=1` (default)
 
-2. **User Authorization** (On-behalf-of-user operations)
-   - Used for: Unity Catalog access, SQL queries, user-specific data
-   - Automatically handled via: `x-forwarded-access-token` header from Databricks Apps
+### On-behalf-of-user Mode: User-level authentication
+- **Used for**: Unity Catalog access, SQL queries, user-specific data
+- **Authentication**: `x-forwarded-access-token` header from Databricks Apps
+- **Benefits**: Respects user permissions, row-level security, audit trails
+- **Configuration**: `USE_SERVICE_PRINCIPAL=0`
+- **Requirements**: User must have Unity Catalog and warehouse permissions
+
+### Local Development Mode
+- **Used for**: Local development and testing
+- **Authentication**: Personal Access Token from environment
+- **Configuration**: `DATABRICKS_TOKEN` environment variable
 
 ## Environment Variables
 
@@ -137,6 +147,15 @@ DATABRICKS_HOST=dbc-your-workspace.cloud.databricks.com
 DATABRICKS_SERVER_HOSTNAME=dbc-your-workspace.cloud.databricks.com
 DATABRICKS_WAREHOUSE_ID=your-warehouse-id
 DATABRICKS_WORKSPACE_ID=your-workspace-id
+```
+
+### Authentication Mode Configuration
+```bash
+# Default: Service principal authentication (recommended)
+USE_SERVICE_PRINCIPAL=1
+
+# Alternative: On-behalf-of-user authentication
+USE_SERVICE_PRINCIPAL=0
 ```
 
 ## API Endpoints
@@ -168,7 +187,18 @@ DATABRICKS_WORKSPACE_ID=your-workspace-id
    - Check that required scopes are enabled in app configuration
    - Ensure row-level security policies allow access
 
-3. **Warehouse Connection Issues**
+3. **Service Principal Authentication Issues**
+   - Ensure `USE_SERVICE_PRINCIPAL=1` is set in environment (default)
+   - Verify `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET` are configured
+   - Check that service principal has Unity Catalog and warehouse permissions
+   - Ensure service principal is active and not expired
+
+4. **On-behalf-of-user Authentication Issues**
+   - Ensure `USE_SERVICE_PRINCIPAL=0` is set in environment
+   - Verify user has proper Unity Catalog and warehouse permissions
+   - Check that `x-forwarded-access-token` header is present
+
+5. **Warehouse Connection Issues**
    - Verify warehouse ID is correct
    - Check warehouse is running and accessible
    - Ensure app has "Can use" permission on warehouse
