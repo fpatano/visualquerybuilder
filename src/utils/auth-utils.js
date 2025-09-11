@@ -44,30 +44,28 @@ export function getUserToken(req) {
  */
 export function isDatabricksApps() {
   // Check for Databricks Apps runtime variables
-  const hasServerHostname = !!process.env.DATABRICKS_SERVER_HOSTNAME;
+  const hasDatabricksHost = !!process.env.DATABRICKS_HOST;
   const hasAppPort = !!process.env.DATABRICKS_APP_PORT;
   const hasBasePath = !!process.env.APP_BASE_PATH;
   
   // Alternative detection methods using variables that are actually available
   const hasWarehouseId = !!process.env.DATABRICKS_WAREHOUSE_ID;
   const hasWorkspaceId = !!process.env.DATABRICKS_WORKSPACE_ID;
-  const hasDatabricksHost = !!process.env.DATABRICKS_HOST;
   const isProduction = process.env.NODE_ENV === 'production';
   const hasPort = !!process.env.PORT;
   
   // Log detection details for debugging
   console.log('🔍 Databricks Apps Detection:');
-  console.log(`  - DATABRICKS_SERVER_HOSTNAME: ${process.env.DATABRICKS_SERVER_HOSTNAME || 'not set'}`);
+  console.log(`  - DATABRICKS_HOST: ${process.env.DATABRICKS_HOST || 'not set'}`);
   console.log(`  - DATABRICKS_APP_PORT: ${process.env.DATABRICKS_APP_PORT || 'not set'}`);
   console.log(`  - APP_BASE_PATH: ${process.env.APP_BASE_PATH || 'not set'}`);
   console.log(`  - DATABRICKS_WAREHOUSE_ID: ${process.env.DATABRICKS_WAREHOUSE_ID || 'not set'}`);
   console.log(`  - DATABRICKS_WORKSPACE_ID: ${process.env.DATABRICKS_WORKSPACE_ID || 'not set'}`);
-  console.log(`  - DATABRICKS_HOST: ${process.env.DATABRICKS_HOST || 'not set'}`);
   console.log(`  - NODE_ENV: ${process.env.NODE_ENV || 'not set'}`);
   console.log(`  - PORT: ${process.env.PORT || 'not set'}`);
   
   // Primary detection: explicit runtime variables
-  if (hasServerHostname && hasAppPort) {
+  if (hasDatabricksHost && hasAppPort) {
     console.log('✅ Detected via runtime variables');
     return true;
   }
@@ -92,16 +90,15 @@ export function isDatabricksApps() {
  * Get appropriate Databricks host for the environment
  */
 export function getDatabricksHost() {
-  // In Databricks Apps, use the server hostname WITH protocol
-  if (process.env.DATABRICKS_SERVER_HOSTNAME) {
-    return `https://${process.env.DATABRICKS_SERVER_HOSTNAME}`;
+  // In Databricks Apps, prefer DATABRICKS_HOST if available (it's more reliable)
+  if (process.env.DATABRICKS_HOST) {
+    const host = process.env.DATABRICKS_HOST;
+    return host.startsWith('http') ? host : `https://${host}`;
   }
   
-  // Local development, use the configured host (ensure it has protocol)
-  const host = process.env.DATABRICKS_HOST;
-  if (host) {
-    // Ensure it has a protocol
-    return host.startsWith('http') ? host : `https://${host}`;
+  // Fallback to server hostname
+  if (process.env.DATABRICKS_SERVER_HOSTNAME) {
+    return `https://${process.env.DATABRICKS_SERVER_HOSTNAME}`;
   }
   
   return null;
