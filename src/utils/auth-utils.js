@@ -94,16 +94,21 @@ export function isDatabricksApps() {
 export function getDatabricksHost() {
   // In Databricks Apps, use the server hostname WITH protocol
   if (process.env.DATABRICKS_SERVER_HOSTNAME) {
-    return `https://${process.env.DATABRICKS_SERVER_HOSTNAME}`;
+    const host = `https://${process.env.DATABRICKS_SERVER_HOSTNAME}`;
+    console.log(`🌐 Using DATABRICKS_SERVER_HOSTNAME: ${host}`);
+    return host;
   }
   
   // Local development, use the configured host (ensure it has protocol)
   const host = process.env.DATABRICKS_HOST;
   if (host) {
     // Ensure it has a protocol
-    return host.startsWith('http') ? host : `https://${host}`;
+    const fullHost = host.startsWith('http') ? host : `https://${host}`;
+    console.log(`🌐 Using DATABRICKS_HOST: ${fullHost}`);
+    return fullHost;
   }
   
+  console.error('❌ No Databricks host configured');
   return null;
 }
 
@@ -117,11 +122,22 @@ export function getDynamicDatabricksHost(req) {
     const proto = req.headers['x-forwarded-proto'] || 'https';
     
     if (host) {
-      return `${proto}://${host}`;
+      const dynamicHost = `${proto}://${host}`;
+      console.log(`🌐 Using dynamic host from headers: ${dynamicHost}`);
+      return dynamicHost;
     }
+    
+    // Log available headers for debugging
+    console.log('🔍 Available forwarded headers:', {
+      'x-forwarded-host': req.headers['x-forwarded-host'],
+      'x-forwarded-proto': req.headers['x-forwarded-proto'],
+      'x-forwarded-for': req.headers['x-forwarded-for'],
+      'host': req.headers['host']
+    });
   }
   
   // Fallback to static configuration
+  console.log('🔄 Falling back to static host configuration');
   return getDatabricksHost();
 }
 

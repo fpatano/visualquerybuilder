@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { DBSQLClient } from '@databricks/sql';
-import { getUserToken, getDatabricksHost, getDatabricksHttpPath, isDatabricksApps } from './src/utils/auth-utils.js';
+import { getUserToken, getDatabricksHost, getDatabricksHttpPath, isDatabricksApps, getDynamicDatabricksHost } from './src/utils/auth-utils.js';
 import dotenv from 'dotenv';
 
 // Load environment variables from .env file
@@ -109,7 +109,13 @@ app.post('/api/warehouse/status', async (req, res) => {
 
     // Databricks Apps - use forwarded user token
     const userToken = getUserToken(req);
-    const host = getDatabricksHost();
+    const host = getDynamicDatabricksHost(req) || getDatabricksHost();
+    
+    if (!host) {
+      throw new Error('No Databricks host available');
+    }
+    
+    console.log(`🔍 Warehouse status API call to: ${host}/api/2.0/sql/warehouses/${process.env.DATABRICKS_WAREHOUSE_ID}`);
     
     // Use Databricks REST API to check warehouse status
     const response = await fetch(`${host}/api/2.0/sql/warehouses/${process.env.DATABRICKS_WAREHOUSE_ID}`, {
@@ -178,7 +184,13 @@ app.post('/api/warehouse/start', async (req, res) => {
 
     // Databricks Apps - use forwarded user token
     const userToken = getUserToken(req);
-    const host = getDatabricksHost();
+    const host = getDynamicDatabricksHost(req) || getDatabricksHost();
+    
+    if (!host) {
+      throw new Error('No Databricks host available');
+    }
+    
+    console.log(`🔍 Warehouse start API call to: ${host}/api/2.0/sql/warehouses/${process.env.DATABRICKS_WAREHOUSE_ID}/start`);
     
     // Start the warehouse
     const response = await fetch(`${host}/api/2.0/sql/warehouses/${process.env.DATABRICKS_WAREHOUSE_ID}/start`, {
@@ -203,6 +215,64 @@ app.post('/api/warehouse/start', async (req, res) => {
     console.error('Failed to start warehouse:', error);
     res.status(500).json({ 
       error: 'Failed to start warehouse',
+      message: error.message 
+    });
+  }
+});
+
+// Warehouse test endpoint (for app initialization)
+app.post('/api/warehouse/test', async (req, res) => {
+  try {
+    // Simple test to verify backend connectivity and basic warehouse access
+    if (!req.isDatabricksApps) {
+      // Local development - just check if we have required env vars
+      const hasToken = !!process.env.DATABRICKS_TOKEN;
+      const hasHost = !!process.env.DATABRICKS_HOST;
+      const hasWarehouse = !!process.env.DATABRICKS_WAREHOUSE_ID;
+      
+      if (!hasToken || !hasHost || !hasWarehouse) {
+        return res.status(500).json({ 
+          error: 'Missing required environment variables for local development',
+          missing: {
+            token: !hasToken,
+            host: !hasHost,
+            warehouse: !hasWarehouse
+          }
+        });
+      }
+      
+      return res.json({ 
+        status: 'OK', 
+        message: 'Local development environment configured',
+        environment: 'local'
+      });
+    }
+
+    // Databricks Apps - test basic connectivity
+    const userToken = getUserToken(req);
+    const host = getDynamicDatabricksHost(req) || getDatabricksHost();
+    
+    if (!userToken || !host) {
+      return res.status(500).json({ 
+        error: 'Missing authentication or host configuration',
+        hasToken: !!userToken,
+        hasHost: !!host,
+        environment: 'databricks-apps'
+      });
+    }
+    
+    console.log(`🔍 Warehouse test - using host: ${host}`);
+    
+    res.json({ 
+      status: 'OK', 
+      message: 'Databricks Apps environment ready',
+      environment: 'databricks-apps',
+      host: host
+    });
+  } catch (error) {
+    console.error('Warehouse test failed:', error);
+    res.status(500).json({ 
+      error: 'Warehouse test failed',
       message: error.message 
     });
   }
@@ -264,7 +334,13 @@ app.post('/api/warehouse/wait-ready', async (req, res) => {
 
     // Databricks Apps - use forwarded user token
     const userToken = getUserToken(req);
-    const host = getDatabricksHost();
+    const host = getDynamicDatabricksHost(req) || getDatabricksHost();
+    
+    if (!host) {
+      throw new Error('No Databricks host available');
+    }
+    
+    console.log(`🔍 Warehouse wait-ready API call to: ${host}/api/2.0/sql/warehouses/${process.env.DATABRICKS_WAREHOUSE_ID}`);
     
     // Poll warehouse status until ready
     while (Date.now() - startTime < timeout * 1000) {
@@ -342,7 +418,13 @@ app.get('/api/unity-catalog/catalogs', async (req, res) => {
     }
 
     const userToken = getUserToken(req);
-    const host = getDatabricksHost();
+    const host = getDynamicDatabricksHost(req) || getDatabricksHost();
+    
+    if (!host) {
+      throw new Error('No Databricks host available');
+    }
+    
+    console.log(`🔍 Unity Catalog API call to: ${host}/api/2.1/unity-catalog/catalogs`);
     
     // Use Databricks REST API to get catalogs
     const response = await fetch(`${host}/api/2.1/unity-catalog/catalogs`, {
@@ -353,10 +435,13 @@ app.get('/api/unity-catalog/catalogs', async (req, res) => {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch catalogs: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`❌ Unity Catalog API error: ${response.status} - ${errorText}`);
+      throw new Error(`Failed to fetch catalogs: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
+    console.log(`✅ Successfully fetched ${data.catalogs?.length || 0} catalogs`);
     res.json({ catalogs: data.catalogs || [] });
   } catch (error) {
     console.error('Failed to fetch catalogs:', error);
@@ -406,7 +491,13 @@ app.get('/api/unity-catalog/schemas', async (req, res) => {
 
     // Databricks Apps - use forwarded user token
     const userToken = getUserToken(req);
-    const host = getDatabricksHost();
+    const host = getDynamicDatabricksHost(req) || getDatabricksHost();
+    
+    if (!host) {
+      throw new Error('No Databricks host available');
+    }
+    
+    console.log(`🔍 Unity Catalog schemas API call to: ${host}/api/2.1/unity-catalog/schemas`);
     
     // Use Databricks REST API to get schemas
     const response = await fetch(`${host}/api/2.1/unity-catalog/schemas?catalog_name=${catalog_name}`, {
@@ -469,7 +560,13 @@ app.get('/api/unity-catalog/tables', async (req, res) => {
     }
 
     const userToken = getUserToken(req);
-    const host = getDatabricksHost();
+    const host = getDynamicDatabricksHost(req) || getDatabricksHost();
+    
+    if (!host) {
+      throw new Error('No Databricks host available');
+    }
+    
+    console.log(`🔍 Unity Catalog tables API call to: ${host}/api/2.1/unity-catalog/tables`);
     
     // Use Databricks REST API to get tables
     const response = await fetch(`${host}/api/2.1/unity-catalog/tables?catalog_name=${catalog_name}&schema_name=${schema_name}`, {
@@ -570,7 +667,13 @@ app.get('/api/unity-catalog/columns', async (req, res) => {
     }
 
     const userToken = getUserToken(req);
-    const host = getDatabricksHost();
+    const host = getDynamicDatabricksHost(req) || getDatabricksHost();
+    
+    if (!host) {
+      throw new Error('No Databricks host available');
+    }
+    
+    console.log(`🔍 Unity Catalog columns API call to: ${host}/api/2.1/unity-catalog/tables/${catalog_name}.${schema_name}.${table_name}`);
     
     // Use Databricks REST API to get columns
     const response = await fetch(`${host}/api/2.1/unity-catalog/tables/${catalog_name}.${schema_name}.${table_name}`, {
@@ -680,7 +783,13 @@ app.post('/api/databricks/2.0/sql/statements', async (req, res) => {
     }
 
     const userToken = getUserToken(req);
-    const host = getDatabricksHost();
+    const host = getDynamicDatabricksHost(req) || getDatabricksHost();
+    
+    if (!host) {
+      throw new Error('No Databricks host available');
+    }
+    
+    console.log(`🔍 SQL execution API call to: ${host}/api/2.0/sql/statements`);
     
     // Use Databricks SQL API 2.0 to execute statement
     const response = await fetch(`${host}/api/2.0/sql/statements`, {
@@ -748,7 +857,13 @@ app.get('/api/databricks/2.0/sql/statements/:statementId', async (req, res) => {
     }
 
     const userToken = getUserToken(req);
-    const host = getDatabricksHost();
+    const host = getDynamicDatabricksHost(req) || getDatabricksHost();
+    
+    if (!host) {
+      throw new Error('No Databricks host available');
+    }
+    
+    console.log(`🔍 SQL statement status API call to: ${host}/api/2.0/sql/statements/${statementId}`);
     
     // Use Databricks SQL API 2.0 to get statement status
     const response = await fetch(`${host}/api/2.0/sql/statements/${statementId}`, {
