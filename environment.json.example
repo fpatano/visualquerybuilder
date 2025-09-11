@@ -1,0 +1,5 @@
+{
+  "DATABRICKS_WAREHOUSE_ID": "your-warehouse-id-here",
+  "DATABRICKS_HOST": "dbc-your-workspace.cloud.databricks.com",
+  "DATABRICKS_WORKSPACE_ID": "your-workspace-id-here"
+}

@@ -139,6 +139,17 @@ DATABRICKS_WAREHOUSE_ID=your-warehouse-id
 DATABRICKS_WORKSPACE_ID=your-workspace-id
 ```
 
+**Important:** For Databricks Apps, you can also use an `environment.json` file for dynamic configuration:
+```json
+{
+  "DATABRICKS_WAREHOUSE_ID": "your-warehouse-id-here",
+  "DATABRICKS_HOST": "dbc-your-workspace.cloud.databricks.com",
+  "DATABRICKS_WORKSPACE_ID": "your-workspace-id-here"
+}
+```
+
+The application will automatically load configuration from `environment.json` if present, falling back to environment variables if not found.
+
 ## API Endpoints
 
 ### Unity Catalog

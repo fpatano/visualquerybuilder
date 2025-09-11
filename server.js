@@ -4,9 +4,42 @@ import { fileURLToPath } from 'url';
 import { DBSQLClient } from '@databricks/sql';
 import { getUserToken, getDatabricksHost, getDatabricksHttpPath, isDatabricksApps } from './src/utils/auth-utils.js';
 import dotenv from 'dotenv';
+import fs from 'fs';
 
 // Load environment variables from .env file
 dotenv.config();
+
+// Load environment.json for Databricks Apps
+let environmentConfig = {};
+try {
+  if (fs.existsSync('environment.json')) {
+    const envFile = fs.readFileSync('environment.json', 'utf8');
+    environmentConfig = JSON.parse(envFile);
+    console.log('✅ Loaded environment.json:', Object.keys(environmentConfig));
+  } else {
+    console.log('ℹ️ No environment.json file found, using process.env');
+  }
+} catch (error) {
+  console.error('❌ Failed to load environment.json:', error.message);
+}
+
+// Helper function to get warehouse ID from environment or environment.json
+function getWarehouseId() {
+  // First try environment.json (Databricks Apps)
+  if (environmentConfig.DATABRICKS_WAREHOUSE_ID) {
+    console.log('✅ Using warehouse ID from environment.json:', environmentConfig.DATABRICKS_WAREHOUSE_ID);
+    return environmentConfig.DATABRICKS_WAREHOUSE_ID;
+  }
+  
+  // Fallback to process.env
+  if (process.env.DATABRICKS_WAREHOUSE_ID) {
+    console.log('✅ Using warehouse ID from process.env:', process.env.DATABRICKS_WAREHOUSE_ID);
+    return process.env.DATABRICKS_WAREHOUSE_ID;
+  }
+  
+  console.error('❌ No warehouse ID found in environment.json or process.env');
+  return null;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -63,11 +96,13 @@ app.get('/ready', (req, res) => {
 
 // Configuration endpoint
 app.get('/api/config', (req, res) => {
+  const warehouseId = getWarehouseId();
   res.json({
-    warehouseId: process.env.DATABRICKS_WAREHOUSE_ID,
-    databricksHost: process.env.DATABRICKS_SERVER_HOSTNAME || process.env.DATABRICKS_HOST,
-    workspaceId: process.env.DATABRICKS_WORKSPACE_ID,
-    environment: req.isDatabricksApps ? 'databricks-apps' : 'local'
+    warehouseId: warehouseId,
+    databricksHost: environmentConfig.DATABRICKS_HOST || process.env.DATABRICKS_SERVER_HOSTNAME || process.env.DATABRICKS_HOST,
+    workspaceId: environmentConfig.DATABRICKS_WORKSPACE_ID || process.env.DATABRICKS_WORKSPACE_ID,
+    environment: req.isDatabricksApps ? 'databricks-apps' : 'local',
+    environmentSource: environmentConfig.DATABRICKS_WAREHOUSE_ID ? 'environment.json' : 'process.env'
   });
 });
 
@@ -87,7 +122,12 @@ app.post('/api/warehouse/status', async (req, res) => {
       }
       
       // Use Databricks REST API to check warehouse status
-      const response = await fetch(`${host}/api/2.0/sql/warehouses/${process.env.DATABRICKS_WAREHOUSE_ID}`, {
+      const warehouseId = getWarehouseId();
+      if (!warehouseId) {
+        return res.json({ status: 'UNKNOWN', message: 'Warehouse ID not configured' });
+      }
+      
+      const response = await fetch(`${host}/api/2.0/sql/warehouses/${warehouseId}`, {
         headers: {
           'Authorization': `Bearer ${localToken}`,
           'Content-Type': 'application/json'
@@ -110,9 +150,14 @@ app.post('/api/warehouse/status', async (req, res) => {
     // Databricks Apps - use forwarded user token
     const userToken = getUserToken(req);
     const host = getDatabricksHost();
+    const warehouseId = getWarehouseId();
+    
+    if (!warehouseId) {
+      return res.json({ status: 'UNKNOWN', message: 'Warehouse ID not configured' });
+    }
     
     // Use Databricks REST API to check warehouse status
-    const response = await fetch(`${host}/api/2.0/sql/warehouses/${process.env.DATABRICKS_WAREHOUSE_ID}`, {
+    const response = await fetch(`${host}/api/2.0/sql/warehouses/${warehouseId}`, {
       headers: {
         'Authorization': `Bearer ${userToken}`,
         'Content-Type': 'application/json'
@@ -155,7 +200,12 @@ app.post('/api/warehouse/start', async (req, res) => {
       }
       
       // Start the warehouse
-      const response = await fetch(`${host}/api/2.0/sql/warehouses/${process.env.DATABRICKS_WAREHOUSE_ID}/start`, {
+      const warehouseId = getWarehouseId();
+      if (!warehouseId) {
+        return res.status(500).json({ error: 'Warehouse ID not configured' });
+      }
+      
+      const response = await fetch(`${host}/api/2.0/sql/warehouses/${warehouseId}/start`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localToken}`,
@@ -179,9 +229,14 @@ app.post('/api/warehouse/start', async (req, res) => {
     // Databricks Apps - use forwarded user token
     const userToken = getUserToken(req);
     const host = getDatabricksHost();
+    const warehouseId = getWarehouseId();
+    
+    if (!warehouseId) {
+      return res.status(500).json({ error: 'Warehouse ID not configured' });
+    }
     
     // Start the warehouse
-    const response = await fetch(`${host}/api/2.0/sql/warehouses/${process.env.DATABRICKS_WAREHOUSE_ID}/start`, {
+    const response = await fetch(`${host}/api/2.0/sql/warehouses/${warehouseId}/start`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${userToken}`,
@@ -227,8 +282,13 @@ app.post('/api/warehouse/wait-ready', async (req, res) => {
       }
       
       // Poll warehouse status until ready
+      const warehouseId = getWarehouseId();
+      if (!warehouseId) {
+        return res.status(500).json({ error: 'Warehouse ID not configured' });
+      }
+      
       while (Date.now() - startTime < timeout * 1000) {
-        const response = await fetch(`${host}/api/2.0/sql/warehouses/${process.env.DATABRICKS_WAREHOUSE_ID}`, {
+        const response = await fetch(`${host}/api/2.0/sql/warehouses/${warehouseId}`, {
           headers: {
             'Authorization': `Bearer ${localToken}`,
             'Content-Type': 'application/json'
@@ -265,10 +325,15 @@ app.post('/api/warehouse/wait-ready', async (req, res) => {
     // Databricks Apps - use forwarded user token
     const userToken = getUserToken(req);
     const host = getDatabricksHost();
+    const warehouseId = getWarehouseId();
+    
+    if (!warehouseId) {
+      return res.status(500).json({ error: 'Warehouse ID not configured' });
+    }
     
     // Poll warehouse status until ready
     while (Date.now() - startTime < timeout * 1000) {
-      const response = await fetch(`${host}/api/2.0/sql/warehouses/${process.env.DATABRICKS_WAREHOUSE_ID}`, {
+      const response = await fetch(`${host}/api/2.0/sql/warehouses/${warehouseId}`, {
         headers: {
           'Authorization': `Bearer ${userToken}`,
           'Content-Type': 'application/json'
