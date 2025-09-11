@@ -9,19 +9,19 @@ function App() {
     // Simple app initialization without strict context checks
     console.log('🚀 Visual SQL Query Builder initializing...');
     
-    // Test backend connectivity and warm up warehouse connection
+    // Check backend connectivity and warehouse status
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     
     (async () => {
       try {
-        await fetch('/api/warehouse/test', { method: 'POST', signal: controller.signal });
-        console.log('✅ Backend connectivity and warehouse test successful');
+        await fetch('/api/warehouse/status', { method: 'POST', signal: controller.signal });
+        console.log('✅ Backend connectivity and warehouse status check successful');
       } catch (error) {
         if (error.name === 'AbortError') {
-          console.log('⏰ Backend test timed out (normal for cold start)');
+          console.log('⏰ Backend status check timed out (normal for cold start)');
         } else {
-          console.warn('⚠️ Backend test failed:', error);
+          console.warn('⚠️ Backend status check failed:', error);
         }
       } finally {
         clearTimeout(timeoutId);

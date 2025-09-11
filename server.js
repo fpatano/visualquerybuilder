@@ -344,6 +344,16 @@ app.get('/api/unity-catalog/catalogs', async (req, res) => {
     const userToken = getUserToken(req);
     const host = getDatabricksHost();
     
+    console.log('🔍 Unity Catalog API Debug:');
+    console.log(`  - Host: ${host}`);
+    console.log(`  - User token present: ${!!userToken}`);
+    console.log(`  - DATABRICKS_SERVER_HOSTNAME: ${process.env.DATABRICKS_SERVER_HOSTNAME}`);
+    console.log(`  - DATABRICKS_HOST: ${process.env.DATABRICKS_HOST}`);
+    
+    if (!host) {
+      throw new Error('Unable to determine Databricks host');
+    }
+    
     // Use Databricks REST API to get catalogs
     const response = await fetch(`${host}/api/2.1/unity-catalog/catalogs`, {
       headers: {
@@ -408,6 +418,15 @@ app.get('/api/unity-catalog/schemas', async (req, res) => {
     const userToken = getUserToken(req);
     const host = getDatabricksHost();
     
+    console.log('🔍 Unity Catalog Schemas API Debug:');
+    console.log(`  - Host: ${host}`);
+    console.log(`  - User token present: ${!!userToken}`);
+    console.log(`  - Catalog name: ${catalog_name}`);
+    
+    if (!host) {
+      throw new Error('Unable to determine Databricks host');
+    }
+    
     // Use Databricks REST API to get schemas
     const response = await fetch(`${host}/api/2.1/unity-catalog/schemas?catalog_name=${catalog_name}`, {
       headers: {
@@ -470,6 +489,15 @@ app.get('/api/unity-catalog/tables', async (req, res) => {
 
     const userToken = getUserToken(req);
     const host = getDatabricksHost();
+    
+    console.log('🔍 Unity Catalog Tables API Debug:');
+    console.log(`  - Host: ${host}`);
+    console.log(`  - User token present: ${!!userToken}`);
+    console.log(`  - Catalog name: ${catalog_name}, Schema name: ${schema_name}`);
+    
+    if (!host) {
+      throw new Error('Unable to determine Databricks host');
+    }
     
     // Use Databricks REST API to get tables
     const response = await fetch(`${host}/api/2.1/unity-catalog/tables?catalog_name=${catalog_name}&schema_name=${schema_name}`, {
@@ -571,6 +599,15 @@ app.get('/api/unity-catalog/columns', async (req, res) => {
 
     const userToken = getUserToken(req);
     const host = getDatabricksHost();
+    
+    console.log('🔍 Unity Catalog Columns API Debug:');
+    console.log(`  - Host: ${host}`);
+    console.log(`  - User token present: ${!!userToken}`);
+    console.log(`  - Table: ${catalog_name}.${schema_name}.${table_name}`);
+    
+    if (!host) {
+      throw new Error('Unable to determine Databricks host');
+    }
     
     // Use Databricks REST API to get columns
     const response = await fetch(`${host}/api/2.1/unity-catalog/tables/${catalog_name}.${schema_name}.${table_name}`, {
