@@ -54,9 +54,13 @@ In the **Configure** step, set up:
 ### 4. Deploy
 
 1. Click **Save** to complete configuration
-2. Click **Deploy** to start the app
-3. Wait for the build process to complete
-4. Your app will be available at the provided URL
+2. Go to Compute -> SQL Warehouses -> search your SQL warehouse 
+3. Open the warehouse Overview tab, copy the warehouse id
+4. Open the warehouse Connection details tab, copy Server hostname
+5. Open app.yml in the deployemnt source folder root. Change env section : set DATABRICKS_WAREHOUSE_ID and DATABRICKS_SERVER_HOSTNAME using values copied before
+6. Click **Deploy** to start the app
+7. Wait for the build process to complete
+8. Your app will be available at the provided URL
 
 ## Local Development
 
